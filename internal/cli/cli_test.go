@@ -35,6 +35,19 @@ func TestRootWithoutQueryShowsHelp(t *testing.T) {
 	}
 }
 
+func TestVersionShowsBuildCommit(t *testing.T) {
+	cmd := New()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--version"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "lemmewatch development") {
+		t.Fatalf("version = %q", out.String())
+	}
+}
+
 func TestDefaultPlayerUsesPlatformOpener(t *testing.T) {
 	tests := map[string]struct {
 		executable string

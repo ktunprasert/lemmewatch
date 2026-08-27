@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"lemmewatch/internal/app"
+	"lemmewatch/internal/buildinfo"
 	"lemmewatch/internal/catalog"
 	"lemmewatch/internal/config"
 	"lemmewatch/internal/httpx"
@@ -25,7 +26,7 @@ func New() *cobra.Command {
 	verbose := false
 	a := configuredApp(&verbose)
 	root := &cobra.Command{
-		Use: "lemmewatch [QUERY...]", Short: "Find and stream media", SilenceUsage: true, SilenceErrors: true,
+		Use: "lemmewatch [QUERY...]", Short: "Find and stream media", Version: buildinfo.Commit, SilenceUsage: true, SilenceErrors: true,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -34,6 +35,7 @@ func New() *cobra.Command {
 			return a.Watch(cmd.Context(), strings.Join(args, " "))
 		},
 	}
+	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "show sanitized HTTP diagnostics")
 	root.AddCommand(watchCommand(a), searchCommand(a), streamsCommand(a), cacheCommand(a), playCommand(a), historyCommand())
 	return root

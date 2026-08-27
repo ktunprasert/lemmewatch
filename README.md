@@ -77,3 +77,9 @@ mise exec -- go build ./cmd/lemmewatch
 mise run build-darwin-arm64
 mise run build-windows-amd64
 ```
+
+Builds embed `git describe --always --dirty`. Verify an artifact with:
+
+```sh
+lemmewatch --version
+```
