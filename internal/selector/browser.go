@@ -14,6 +14,7 @@ import (
 
 type BrowserOptions[T item] struct {
 	InitialTitle     string
+	InitialQuery     string
 	ParentGroups     []string
 	PreferredGroup   string
 	PreferredQuality int
@@ -51,6 +52,7 @@ type playFinished struct{ err error }
 type requeryFinished[T item] struct {
 	items []T
 	err   error
+	query string
 }
 
 type browserModel[T item] struct {
@@ -67,6 +69,7 @@ type browserModel[T item] struct {
 	filtering   bool
 	querying    bool
 	query       string
+	activeQuery string
 	cachedOnly  bool
 	quality     int
 	notice      string
@@ -122,6 +125,7 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.levels = []pane[T]{{title: title, items: msg.items}}
 		m.right = pane[T]{}
 		m.crumbs = nil
+		m.activeQuery = msg.query
 		m.focusRight = false
 		m.notice = ""
 	case tea.KeyMsg:
@@ -230,7 +234,7 @@ func (m browserModel[T]) updateQuery(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.notice = "Searching..."
 		return m, func() tea.Msg {
 			items, err := m.options.Requery(m.ctx, query)
-			return requeryFinished[T]{items: items, err: err}
+			return requeryFinished[T]{items: items, err: err, query: query}
 		}
 	case "backspace", "ctrl+h":
 		if len(m.query) > 0 {
@@ -440,7 +444,10 @@ func (m browserModel[T]) View() string {
 		rightTitle = fmt.Sprintf("Torrents  [%s]  [%s]", cacheLabel, qualityLabel)
 	}
 	right := renderBrowserPane(rightTitle, rightItems, m.right.index, rightWidth, rows, m.focusRight, m.right.filter, m.loading, m.err)
-	breadcrumb := "Search"
+	breadcrumb := m.activeQuery
+	if breadcrumb == "" {
+		breadcrumb = "Search"
+	}
 	if len(m.crumbs) > 0 {
 		breadcrumb += " / " + strings.Join(m.crumbs, " / ")
 	}
@@ -571,7 +578,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 		title = "Search results"
 	}
 	groupIndex := preferredGroupIndex(options.ParentGroups, options.PreferredGroup)
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: true, quality: options.PreferredQuality, width: 100, height: 24}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: true, quality: options.PreferredQuality, activeQuery: options.InitialQuery, width: 100, height: 24}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

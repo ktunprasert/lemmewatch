@@ -207,6 +207,7 @@ func (a App) Watch(ctx context.Context, query string) error {
 			return nil, fmt.Errorf("item cannot be opened")
 		}
 	}, selector.BrowserOptions[navigationChoice]{
+		InitialQuery:     query,
 		ParentGroups:     []string{string(model.Movie), string(model.Series)},
 		PreferredGroup:   preferences.MediaTab,
 		PreferredQuality: preferences.Quality,

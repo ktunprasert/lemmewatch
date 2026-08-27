@@ -268,6 +268,7 @@ func TestBrowserStopsPlayback(t *testing.T) {
 func TestBrowserRequeriesRoot(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
 	m.options.InitialTitle = "Search results"
+	m.activeQuery = "Dune"
 	m.options.Requery = func(_ context.Context, query string) ([]testChoice, error) {
 		if query != "Silo" {
 			t.Fatalf("query = %q", query)
@@ -287,7 +288,16 @@ func TestBrowserRequeriesRoot(t *testing.T) {
 	}
 	next, _ = m.Update(command())
 	m = next.(browserModel[testChoice])
-	if m.loading || len(m.levels) != 1 || m.levels[0].items[0].label != "Silo" || m.focusRight {
+	if m.loading || len(m.levels) != 1 || m.levels[0].items[0].label != "Silo" || m.focusRight || m.activeQuery != "Silo" {
 		t.Fatalf("requery result = %#v", m)
+	}
+}
+
+func TestBrowserBreadcrumbUsesActiveQuery(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.activeQuery = "science fiction"
+	view := ansi.Strip(m.View())
+	if !strings.HasPrefix(view, "science fiction\n") {
+		t.Fatalf("breadcrumb = %q", view)
 	}
 }
