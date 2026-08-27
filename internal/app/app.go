@@ -194,6 +194,10 @@ func (a App) Watch(ctx context.Context, query string) error {
 			return result, nil
 		case navigationEpisode:
 			streams, streamErr := a.Streams.SeriesStreams(ctx, selected.episode.ID)
+			for i := range streams {
+				streams[i].Season = selected.episode.Season
+				streams[i].Episode = selected.episode.Episode
+			}
 			return a.prepareStreams(ctx, streams, streamErr)
 		default:
 			return nil, fmt.Errorf("item cannot be opened")
@@ -223,7 +227,7 @@ func (a App) Watch(ctx context.Context, query string) error {
 		return err
 	}
 	fmt.Fprintln(a.Err, "Resolving stream through TorBox...")
-	resolved, err := a.TorBox.Resolve(ctx, chosen.stream.Hash, chosen.stream.FileIndex)
+	resolved, err := a.TorBox.ResolveFile(ctx, chosen.stream.Hash, chosen.stream.FileIndex, chosen.stream.Filename, chosen.stream.Season, chosen.stream.Episode)
 	if err != nil {
 		return err
 	}

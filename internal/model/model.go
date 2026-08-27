@@ -26,6 +26,8 @@ type Stream struct {
 	Size      int64
 	Cached    bool
 	Source    string
+	Season    int
+	Episode   int
 }
 
 type Episode struct {

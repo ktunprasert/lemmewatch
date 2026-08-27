@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -98,6 +100,10 @@ func (c Client) Cached(ctx context.Context, hashes []string) (map[string]bool, e
 }
 
 func (c Client) Resolve(ctx context.Context, hash string, videoIndex int) (string, error) {
+	return c.ResolveFile(ctx, hash, videoIndex, "", 0, 0)
+}
+
+func (c Client) ResolveFile(ctx context.Context, hash string, videoIndex int, filename string, season, episode int) (string, error) {
 	if !validHash(hash) {
 		return "", fmt.Errorf("invalid torrent info hash")
 	}
@@ -144,15 +150,16 @@ func (c Client) Resolve(ctx context.Context, hash string, videoIndex int) (strin
 		return "", fmt.Errorf("TorBox file lookup: %w", err)
 	}
 	videos := listed.Data.videoFiles()
-	if videoIndex < 0 || videoIndex >= len(videos) {
-		return "", fmt.Errorf("TorBox video file index %d unavailable", videoIndex)
+	selected, err := selectVideoFile(videos, videoIndex, filename, season, episode)
+	if err != nil {
+		return "", err
 	}
 
 	dlURL, _ := c.endpoint("torrents/requestdl")
 	q = dlURL.Query()
 	q.Set("token", c.Token)
 	q.Set("torrent_id", strconv.FormatInt(created.Data.TorrentID, 10))
-	q.Set("file_id", strconv.FormatInt(videos[videoIndex].ID, 10))
+	q.Set("file_id", strconv.FormatInt(selected.ID, 10))
 	q.Set("append_name", "true")
 	dlURL.RawQuery = q.Encode()
 	var download envelope[string]
@@ -163,6 +170,39 @@ func (c Client) Resolve(ctx context.Context, hash string, videoIndex int) (strin
 		return "", fmt.Errorf("TorBox download resolution returned no URL")
 	}
 	return download.Data, nil
+}
+
+func selectVideoFile(videos []file, videoIndex int, filename string, season, episode int) (file, error) {
+	if filename != "" {
+		for _, candidate := range videos {
+			if strings.EqualFold(candidate.ShortName, filename) || strings.EqualFold(path.Base(candidate.Name), filename) {
+				return candidate, nil
+			}
+		}
+	}
+	if season > 0 && episode > 0 {
+		patterns := []*regexp.Regexp{
+			regexp.MustCompile(fmt.Sprintf(`(?i)(?:^|[^a-z0-9])s0*%de0*%d(?:[^0-9]|$)`, season, episode)),
+			regexp.MustCompile(fmt.Sprintf(`(?i)(?:^|[^0-9])0*%dx0*%d(?:[^0-9]|$)`, season, episode)),
+		}
+		var matches []file
+		for _, candidate := range videos {
+			for _, pattern := range patterns {
+				if pattern.MatchString(candidate.Name) {
+					matches = append(matches, candidate)
+					break
+				}
+			}
+		}
+		if len(matches) > 0 {
+			sort.SliceStable(matches, func(i, j int) bool { return matches[i].Size > matches[j].Size })
+			return matches[0], nil
+		}
+	}
+	if videoIndex < 0 || videoIndex >= len(videos) {
+		return file{}, fmt.Errorf("TorBox video file index %d unavailable", videoIndex)
+	}
+	return videos[videoIndex], nil
 }
 
 func (t torrent) videoFiles() []file {

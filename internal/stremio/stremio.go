@@ -29,11 +29,14 @@ type Client struct {
 
 type response struct {
 	Streams []struct {
-		Name     string `json:"name"`
-		Title    string `json:"title"`
-		InfoHash string `json:"infoHash"`
-		FileIdx  int    `json:"fileIdx"`
-		URL      string `json:"url"`
+		Name          string `json:"name"`
+		Title         string `json:"title"`
+		InfoHash      string `json:"infoHash"`
+		FileIdx       int    `json:"fileIdx"`
+		URL           string `json:"url"`
+		BehaviorHints struct {
+			Filename string `json:"filename"`
+		} `json:"behaviorHints"`
 	} `json:"streams"`
 }
 
@@ -88,7 +91,7 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 		}
 		seen[hash+":"+strconv.Itoa(raw.FileIdx)] = true
 		text := raw.Name + " " + raw.Title
-		streams = append(streams, model.Stream{Hash: hash, FileIndex: raw.FileIdx, Title: raw.Title, Quality: quality(text), Seeders: seeders(text), Size: size(text), Source: raw.Name})
+		streams = append(streams, model.Stream{Hash: hash, FileIndex: raw.FileIdx, Title: raw.Title, Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: size(text), Source: raw.Name})
 	}
 	Rank(streams)
 	return streams, nil

@@ -18,7 +18,7 @@ func TestStreamsNormalizesDeduplicatesAndRanks(t *testing.T) {
 			t.Errorf("Accept = %q", got)
 		}
 		_, _ = w.Write([]byte(`{"streams":[` +
-			`{"name":"Torrentio 1080p","title":"👤 50 2.5 GB","infoHash":"` + hashA + `","fileIdx":1},` +
+			`{"name":"Torrentio 1080p","title":"👤 50 2.5 GB","infoHash":"` + hashA + `","fileIdx":1,"behaviorHints":{"filename":"episode.mkv"}},` +
 			`{"name":"duplicate","title":"x","infoHash":"` + hashA + `","fileIdx":1},` +
 			`{"name":"Torrentio 2160p","title":"Seeders: 8 10 GB","url":"magnet:?xt=urn:btih:` + hashB + `"},` +
 			`{"name":"bad","infoHash":"nope"}]}`))
@@ -36,6 +36,9 @@ func TestStreamsNormalizesDeduplicatesAndRanks(t *testing.T) {
 	}
 	if items[1].Seeders != 50 || items[1].Size != 2_500_000_000 {
 		t.Fatalf("parsing = %#v", items[1])
+	}
+	if items[1].Filename != "episode.mkv" {
+		t.Fatalf("filename = %q", items[1].Filename)
 	}
 }
 

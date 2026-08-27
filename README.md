@@ -47,6 +47,9 @@ Bare query and `watch` run movie and series flows. Series traversal adds season
 and episode panes before torrent selection. Selected cached streams resolve
 through TorBox and launch the configured player.
 
+For multi-file season packs, addon filename metadata selects the matching TorBox
+file before season/episode pattern matching or legacy index fallback.
+
 Interactive watch uses two panes: search results on the left and torrents on the
 right. `Tab` switches movie/series results. Enter loads or selects, `h`/`l`
 changes focus, `j`/`k` moves, and `/` filters the active pane by name or quality.
