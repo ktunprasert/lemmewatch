@@ -69,6 +69,12 @@ type requeryFinished[T item] struct {
 	query string
 }
 
+type helpBinding struct {
+	keys  string
+	label string
+	key   tea.KeyMsg
+}
+
 type browserModel[T item] struct {
 	ctx         context.Context
 	levels      []pane[T]
@@ -86,6 +92,9 @@ type browserModel[T item] struct {
 	activeQuery string
 	sortMenu    bool
 	sortMode    sortMode
+	helpMenu    bool
+	helpFilter  string
+	helpIndex   int
 	cachedOnly  bool
 	quality     int
 	notice      string
@@ -145,6 +154,9 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.focusRight = false
 		m.notice = ""
 	case tea.KeyMsg:
+		if m.helpMenu {
+			return m.updateHelp(msg)
+		}
 		if m.sortMenu {
 			return m.updateSort(msg)
 		}
@@ -169,6 +181,10 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "/":
 			m.filtering = true
+		case "?":
+			m.helpMenu = true
+			m.helpFilter = ""
+			m.helpIndex = 0
 		case "ctrl+p":
 			if m.options.Requery != nil && !m.loading {
 				m.querying = true
@@ -221,6 +237,82 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	bindings := m.filteredHelpBindings()
+	switch msg.String() {
+	case "esc":
+		m.helpMenu = false
+		m.helpFilter = ""
+	case "up":
+		m.helpIndex = clamp(m.helpIndex-1, len(bindings))
+	case "down":
+		m.helpIndex = clamp(m.helpIndex+1, len(bindings))
+	case "enter":
+		if len(bindings) == 0 {
+			return m, nil
+		}
+		selected := bindings[clamp(m.helpIndex, len(bindings))]
+		m.helpMenu = false
+		m.helpFilter = ""
+		m.helpIndex = 0
+		return m.Update(selected.key)
+	case "backspace", "ctrl+h":
+		if len(m.helpFilter) > 0 {
+			runes := []rune(m.helpFilter)
+			m.helpFilter = string(runes[:len(runes)-1])
+		}
+	case "ctrl+w":
+		m.helpFilter = strings.TrimRight(m.helpFilter, " ")
+		if end := strings.LastIndex(m.helpFilter, " "); end >= 0 {
+			m.helpFilter = strings.TrimRight(m.helpFilter[:end+1], " ")
+		} else {
+			m.helpFilter = ""
+		}
+	case "ctrl+u":
+		m.helpFilter = ""
+	case "ctrl+c":
+		return m, tea.Quit
+	default:
+		if msg.Type == tea.KeySpace {
+			m.helpFilter += " "
+		} else if msg.Type == tea.KeyRunes {
+			m.helpFilter += string(msg.Runes)
+		}
+	}
+	m.helpIndex = clamp(m.helpIndex, len(m.filteredHelpBindings()))
+	return m, nil
+}
+
+func (m browserModel[T]) filteredHelpBindings() []helpBinding {
+	bindings := []helpBinding{
+		{keys: "Enter / Right / l", label: "Open or confirm", key: tea.KeyMsg{Type: tea.KeyEnter}},
+		{keys: "Left / h / Esc", label: "Go back", key: tea.KeyMsg{Type: tea.KeyEscape}},
+		{keys: "Up / k", label: "Move up", key: tea.KeyMsg{Type: tea.KeyUp}},
+		{keys: "Down / j", label: "Move down", key: tea.KeyMsg{Type: tea.KeyDown}},
+		{keys: "PgUp", label: "Previous page", key: tea.KeyMsg{Type: tea.KeyPgUp}},
+		{keys: "PgDown", label: "Next page", key: tea.KeyMsg{Type: tea.KeyPgDown}},
+		{keys: "Tab", label: "Toggle movie or series", key: tea.KeyMsg{Type: tea.KeyTab}},
+		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
+		{keys: "Ctrl-P", label: "Run new search", key: tea.KeyMsg{Type: tea.KeyCtrlP}},
+		{keys: "s", label: "Sort or stop playback", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
+		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
+		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
+		{keys: "?", label: "Show keybindings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
+		{keys: "q", label: "Quit", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
+	}
+	query := strings.ToLower(strings.TrimSpace(m.helpFilter))
+	if query == "" {
+		return bindings
+	}
+	result := make([]helpBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		if strings.Contains(strings.ToLower(binding.keys+" "+binding.label), query) {
+			result = append(result, binding)
+		}
+	}
+	return result
 }
 
 func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -532,18 +624,7 @@ func (m browserModel[T]) View() string {
 	if len(m.crumbs) > 0 {
 		breadcrumb += " / " + strings.Join(m.crumbs, " / ")
 	}
-	filterHint := ""
-	if m.filtering {
-		filter := current.filter
-		if m.focusRight {
-			filter = m.right.filter
-		}
-		filterHint = headerStyle.Render("Filter: "+filter+"_") + "\n"
-	}
-	if m.querying {
-		filterHint = headerStyle.Render("Search: "+m.query+"_") + "\n"
-	}
-	helpText := "tab movie/series  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
+	helpText := "? keys  tab movie/series  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
 	if m.focusRight {
 		helpText = "h/l focus  j/k move  enter open/select  / filter  esc back"
 		if m.rightHasStreams() {
@@ -556,21 +637,75 @@ func (m browserModel[T]) View() string {
 	if m.playing {
 		helpText = "PLAYING  s stop  |  " + helpText
 	}
-	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right) + "\n" + filterHint + hintStyle.Render(helpText) + "\n"
-	if !m.sortMenu {
+	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right) + "\n" + hintStyle.Render(helpText) + "\n"
+	var modal string
+	switch {
+	case m.helpMenu:
+		modal = m.helpModal()
+	case m.sortMenu:
+		modal = activeBorder.Padding(0, 2).Render(strings.Join([]string{
+			headerStyle.Render("Sort results"),
+			"a   Name ascending",
+			"A   Name descending",
+			"y   Year ascending",
+			"Y   Year descending",
+			"r   Cinemeta relevance",
+			"",
+			hintStyle.Render("Esc cancel"),
+		}, "\n"))
+	case m.querying:
+		modal = inputModal("Search", m.query, "Enter search  Esc cancel")
+	case m.filtering:
+		filter := current.filter
+		if m.focusRight {
+			filter = m.right.filter
+		}
+		modal = inputModal("Filter active pane", filter, "Enter apply  Esc clear")
+	}
+	if modal == "" {
 		return base
 	}
-	modal := activeBorder.Padding(0, 2).Render(strings.Join([]string{
-		headerStyle.Render("Sort results"),
-		"a   Name ascending",
-		"A   Name descending",
-		"y   Year ascending",
-		"Y   Year descending",
-		"r   Cinemeta relevance",
-		"",
-		hintStyle.Render("Esc cancel"),
-	}, "\n"))
 	return overlay(base, modal, width)
+}
+
+func inputModal(title, value, help string) string {
+	input := ansi.Truncate(value, 48, "...") + "_"
+	return activeBorder.Width(50).Padding(0, 1).Render(strings.Join([]string{
+		headerStyle.Render(title),
+		input,
+		"",
+		hintStyle.Render(help + "  Ctrl-W word  Ctrl-U line"),
+	}, "\n"))
+}
+
+func (m browserModel[T]) helpModal() string {
+	bindings := m.filteredHelpBindings()
+	lines := []string{headerStyle.Render("Keybindings"), "Search: " + m.helpFilter + "_", ""}
+	if len(bindings) == 0 {
+		lines = append(lines, "No matching commands")
+	} else {
+		selected := clamp(m.helpIndex, len(bindings))
+		height := m.height
+		if height <= 0 {
+			height = 24
+		}
+		visible := max(1, height-7)
+		start := max(0, min(selected-visible/2, len(bindings)-visible))
+		end := min(len(bindings), start+visible)
+		lines[0] += hintStyle.Render(fmt.Sprintf("  %d-%d/%d", start+1, end, len(bindings)))
+		for i := start; i < end; i++ {
+			binding := bindings[i]
+			line := fmt.Sprintf("%-20s %s", binding.keys, binding.label)
+			if i == selected {
+				line = selectedStyle.Width(50).Render("> " + line)
+			} else {
+				line = "  " + line
+			}
+			lines = append(lines, line)
+		}
+	}
+	lines = append(lines, "", hintStyle.Render("Type to filter  Up/Down select  Enter run  Esc close"))
+	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
 func overlay(base, modal string, width int) string {

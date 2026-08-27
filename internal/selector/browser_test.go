@@ -310,6 +310,24 @@ func TestFilterAcceptsSpaces(t *testing.T) {
 	}
 }
 
+func TestFilterAndSearchRenderAsModalLayers(t *testing.T) {
+	m := newBrowser(testChoice{label: "One Piece"})
+	m.activeQuery = "One Piece"
+	m.filtering = true
+	m.current().filter = "piece"
+	filterView := ansi.Strip(m.View())
+	if !strings.Contains(filterView, "Filter active pane") || !strings.Contains(filterView, "One Piece") {
+		t.Fatalf("filter modal = %q", filterView)
+	}
+	m.filtering = false
+	m.querying = true
+	m.query = "Family Guy"
+	queryView := ansi.Strip(m.View())
+	if !strings.Contains(queryView, "Search") || !strings.Contains(queryView, "Family Guy_") || !strings.Contains(queryView, "One Piece") {
+		t.Fatalf("search modal = %q", queryView)
+	}
+}
+
 func TestQualityCyclePersists(t *testing.T) {
 	saved := -1
 	m := newBrowser(testChoice{label: "parent"})
@@ -398,6 +416,41 @@ func TestBrowserQueryAcceptsSpaces(t *testing.T) {
 	}
 	if m.query != "one piece" {
 		t.Fatalf("query = %q", m.query)
+	}
+}
+
+func TestHelpPaletteFiltersAndRunsSelectedAction(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.options.Requery = func(context.Context, string) ([]testChoice, error) { return nil, nil }
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = next.(browserModel[testChoice])
+	for _, message := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("new")},
+		{Type: tea.KeySpace},
+		{Type: tea.KeyRunes, Runes: []rune("search")},
+	} {
+		next, _ = m.Update(message)
+		m = next.(browserModel[testChoice])
+	}
+	bindings := m.filteredHelpBindings()
+	if len(bindings) != 1 || bindings[0].keys != "Ctrl-P" {
+		t.Fatalf("filtered bindings = %#v", bindings)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if m.helpMenu || !m.querying {
+		t.Fatalf("selected action did not open search: %#v", m)
+	}
+}
+
+func TestHelpPaletteCanSelectFilterAction(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.helpMenu = true
+	m.helpFilter = "active pane"
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if m.helpMenu || !m.filtering {
+		t.Fatalf("selected action did not open filter: %#v", m)
 	}
 }
 

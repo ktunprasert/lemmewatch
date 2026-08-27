@@ -68,6 +68,9 @@ exits the browser.
 
 At the root, `s` opens a sort-key menu: `a`/`A` sorts title ascending/descending,
 `y`/`Y` sorts year ascending/descending, and `r` restores Cinemeta relevance.
+Filter, search, sort, and help use modal overlays. Press `?` for a searchable
+keybinding palette; type to filter commands and press Enter to run the selected
+binding.
 
 Temporary TorBox download URLs and API tokens are never printed. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved
