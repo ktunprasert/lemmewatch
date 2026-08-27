@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -79,6 +80,8 @@ type helpBinding struct {
 	key   tea.KeyMsg
 }
 
+type toastExpired struct{ id uint64 }
+
 type browserModel[T item] struct {
 	ctx         context.Context
 	levels      []pane[T]
@@ -103,6 +106,7 @@ type browserModel[T item] struct {
 	cachedOnly  bool
 	quality     int
 	notice      string
+	toastID     uint64
 	width       int
 	height      int
 	chosen      bool
@@ -114,11 +118,25 @@ type browserModel[T item] struct {
 var (
 	activeBorder   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#7D7AFF"})
 	inactiveBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#A0A0A0", Dark: "#555555"})
+	toastBorder    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#B42318", Dark: "#FF6B6B"}).Padding(0, 1)
 )
 
 func (m browserModel[T]) Init() tea.Cmd { return nil }
 
-func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.Cmd) {
+	previousNotice := m.notice
+	defer func() {
+		updated, ok := result.(browserModel[T])
+		if !ok || updated.notice == "" || updated.notice == previousNotice {
+			return
+		}
+		updated.toastID++
+		id := updated.toastID
+		result = updated
+		if command == nil {
+			command = tea.Tick(4*time.Second, func(time.Time) tea.Msg { return toastExpired{id: id} })
+		}
+	}()
 	switch msg := message.(type) {
 	case tea.WindowSizeMsg:
 		m.width = max(40, msg.Width)
@@ -131,6 +149,8 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.right.filter = ""
 		if msg.err == nil && len(msg.items) > 0 {
 			m.focusRight = true
+		} else if msg.err != nil {
+			m.notice = "Load failed: " + msg.err.Error()
 		}
 	case playFinished:
 		m.playing = false
@@ -158,6 +178,10 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeQuery = msg.query
 		m.focusRight = false
 		m.notice = ""
+	case toastExpired:
+		if msg.id == m.toastID {
+			m.notice = ""
+		}
 	case tea.KeyMsg:
 		if m.helpMenu {
 			return m.updateHelp(msg)
@@ -702,9 +726,6 @@ func (m browserModel[T]) View() string {
 			helpText = "c cached/all  v quality  " + helpText
 		}
 	}
-	if m.notice != "" {
-		helpText = m.notice + "  |  " + helpText
-	}
 	if m.playing {
 		helpText = "PLAYING  x stop  |  " + helpText
 	}
@@ -724,10 +745,14 @@ func (m browserModel[T]) View() string {
 		}
 		modal = inputModal("Filter active pane", filter, "Enter apply  Esc clear")
 	}
-	if modal == "" {
-		return base
+	view := base
+	if modal != "" {
+		view = overlay(view, modal, width)
 	}
-	return overlay(base, modal, width)
+	if m.notice != "" {
+		view = toastOverlay(view, m.notice, width)
+	}
+	return view
 }
 
 func sortModal(torrents bool) string {
@@ -801,6 +826,24 @@ func overlay(base, modal string, width int) string {
 	modalWidth := lipgloss.Width(modal)
 	x := max(0, (width-modalWidth)/2)
 	y := max(0, (len(baseLines)-len(modalLines))/2)
+	return overlayAt(baseLines, modalLines, width, x, y)
+}
+
+func toastOverlay(base, message string, width int) string {
+	contentWidth := max(10, min(48, width-6))
+	toast := toastBorder.Render(ansi.Truncate(plainLabel(message), contentWidth, "..."))
+	baseLines := strings.Split(strings.TrimSuffix(base, "\n"), "\n")
+	toastLines := strings.Split(toast, "\n")
+	x := max(0, width-lipgloss.Width(toast)-1)
+	y := max(0, len(baseLines)-len(toastLines)-1)
+	return overlayAt(baseLines, toastLines, width, x, y)
+}
+
+func overlayAt(baseLines, modalLines []string, width, x, y int) string {
+	modalWidth := 0
+	for _, line := range modalLines {
+		modalWidth = max(modalWidth, lipgloss.Width(line))
+	}
 	for len(baseLines) < y+len(modalLines) {
 		baseLines = append(baseLines, "")
 	}

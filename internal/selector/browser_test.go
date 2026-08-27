@@ -269,6 +269,51 @@ func TestOverlayComposesModalOverBase(t *testing.T) {
 	}
 }
 
+func TestToastRendersAndExpiresByGeneration(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune", group: "movie"})
+	m.options.ParentGroups = []string{"movie", "series"}
+	m.sortMenu = true
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	m = next.(browserModel[testChoice])
+	if m.notice != "Unknown sort key" || m.toastID == 0 || command == nil {
+		t.Fatalf("toast not scheduled: %#v", m)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "Unknown sort key") {
+		t.Fatalf("toast not rendered: %q", ansi.Strip(m.View()))
+	}
+	next, _ = m.Update(toastExpired{id: m.toastID - 1})
+	m = next.(browserModel[testChoice])
+	if m.notice == "" {
+		t.Fatal("stale timer cleared current toast")
+	}
+	next, _ = m.Update(toastExpired{id: m.toastID})
+	m = next.(browserModel[testChoice])
+	if m.notice != "" {
+		t.Fatalf("toast did not expire: %q", m.notice)
+	}
+}
+
+func TestToastOverlaysBottomRight(t *testing.T) {
+	base := "top\nsecond line\nthird line\nfourth line\nbottom\n"
+	view := ansi.Strip(toastOverlay(base, "network error", 50))
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	if !strings.Contains(strings.Join(lines[len(lines)-4:], "\n"), "network error") {
+		t.Fatalf("toast not near bottom: %q", view)
+	}
+	if !strings.HasPrefix(lines[0], "top") {
+		t.Fatalf("toast damaged base: %q", view)
+	}
+}
+
+func TestLoadErrorCreatesToast(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	next, command := m.Update(loaded[testChoice]{err: errors.New("network error")})
+	m = next.(browserModel[testChoice])
+	if m.notice != "Load failed: network error" || command == nil {
+		t.Fatalf("load error toast = %#v", m)
+	}
+}
+
 func TestBrowserFiltersCacheAndQuality(t *testing.T) {
 	m := newBrowser(testChoice{label: "parent"})
 	m.right.items = []testChoice{{label: "1080p", terminal: true, cached: true, quality: 1080}, {label: "2160p", terminal: true, quality: 2160}}

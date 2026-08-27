@@ -73,6 +73,8 @@ default ranking sorts. `x` stops directly managed playback.
 Filter, search, sort, and help use modal overlays. Press `?` for a searchable
 keybinding palette; type to filter commands and press Enter to run the selected
 binding.
+Errors and short status notifications appear as bottom-right toasts and dismiss
+automatically without animation.
 
 Temporary TorBox download URLs and API tokens are never printed. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved
