@@ -543,9 +543,6 @@ func (m browserModel[T]) View() string {
 	if m.querying {
 		filterHint = headerStyle.Render("Search: "+m.query+"_") + "\n"
 	}
-	if m.sortMenu {
-		filterHint = activeBorder.Padding(0, 1).Render("sort  a name asc  A name desc  y year asc  Y year desc  r relevance") + "\n"
-	}
 	helpText := "tab movie/series  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
 	if m.focusRight {
 		helpText = "h/l focus  j/k move  enter open/select  / filter  esc back"
@@ -559,7 +556,42 @@ func (m browserModel[T]) View() string {
 	if m.playing {
 		helpText = "PLAYING  s stop  |  " + helpText
 	}
-	return ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right) + "\n" + filterHint + hintStyle.Render(helpText) + "\n"
+	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right) + "\n" + filterHint + hintStyle.Render(helpText) + "\n"
+	if !m.sortMenu {
+		return base
+	}
+	modal := activeBorder.Padding(0, 2).Render(strings.Join([]string{
+		headerStyle.Render("Sort results"),
+		"a   Name ascending",
+		"A   Name descending",
+		"y   Year ascending",
+		"Y   Year descending",
+		"r   Cinemeta relevance",
+		"",
+		hintStyle.Render("Esc cancel"),
+	}, "\n"))
+	return overlay(base, modal, width)
+}
+
+func overlay(base, modal string, width int) string {
+	baseLines := strings.Split(strings.TrimSuffix(base, "\n"), "\n")
+	modalLines := strings.Split(modal, "\n")
+	modalWidth := lipgloss.Width(modal)
+	x := max(0, (width-modalWidth)/2)
+	y := max(0, (len(baseLines)-len(modalLines))/2)
+	for len(baseLines) < y+len(modalLines) {
+		baseLines = append(baseLines, "")
+	}
+	for i, modalLine := range modalLines {
+		baseLine := baseLines[y+i]
+		left := ansi.Cut(baseLine, 0, x)
+		if padding := x - lipgloss.Width(left); padding > 0 {
+			left += strings.Repeat(" ", padding)
+		}
+		right := ansi.Cut(baseLine, x+modalWidth, width)
+		baseLines[y+i] = left + modalLine + right
+	}
+	return strings.Join(baseLines, "\n") + "\n"
 }
 
 func (m browserModel[T]) rightHasStreams() bool {

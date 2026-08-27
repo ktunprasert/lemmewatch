@@ -242,13 +242,25 @@ func TestBrowserShowsAndCancelsSortMenu(t *testing.T) {
 	m.options.ParentGroups = []string{"movie", "series"}
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	m = next.(browserModel[testChoice])
-	if !m.sortMenu || !strings.Contains(ansi.Strip(m.View()), "a name asc") {
+	if !m.sortMenu || !strings.Contains(ansi.Strip(m.View()), "a   Name ascending") {
 		t.Fatalf("sort menu not visible: %q", ansi.Strip(m.View()))
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m = next.(browserModel[testChoice])
 	if m.sortMenu || m.sortMode != sortRelevance {
 		t.Fatalf("sort menu not cancelled: %#v", m)
+	}
+}
+
+func TestOverlayComposesModalOverBase(t *testing.T) {
+	base := "top line\nleft pane content and right pane content\nbottom line\n"
+	modal := "modal\nmenu"
+	view := overlay(base, modal, 45)
+	if !strings.Contains(view, "top line") || !strings.Contains(view, "modal") || !strings.Contains(view, "menu") {
+		t.Fatalf("overlay = %q", view)
+	}
+	if strings.Count(view, "\n") != strings.Count(base, "\n") {
+		t.Fatalf("overlay changed layer height: %q", view)
 	}
 }
 
