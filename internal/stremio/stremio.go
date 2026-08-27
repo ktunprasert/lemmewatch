@@ -47,6 +47,8 @@ func (c Client) Streams(ctx context.Context, imdbID string) ([]model.Stream, err
 	if err != nil {
 		return nil, fmt.Errorf("stream lookup: %w", err)
 	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "lemmewatch/0.1")
 	res, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("stream lookup: %w", err)

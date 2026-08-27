@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"sync"
+	"time"
 
 	"lemmewatch/internal/catalog"
 	"lemmewatch/internal/model"
@@ -102,7 +103,9 @@ func (a App) Cache(ctx context.Context, hashes []string) (map[string]bool, error
 	if a.TorBox.Token == "" {
 		return nil, fmt.Errorf("TORBOX_API_TOKEN is required")
 	}
-	fmt.Fprintln(a.Err, "Checking TorBox cache...")
+	fmt.Fprintf(a.Err, "Checking TorBox cache (%d candidates)...\n", len(hashes))
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
 	return a.TorBox.Cached(ctx, hashes)
 }
 

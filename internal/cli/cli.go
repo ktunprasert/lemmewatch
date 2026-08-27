@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"lemmewatch/internal/app"
 	"lemmewatch/internal/catalog"
+	"lemmewatch/internal/httpx"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
 	"lemmewatch/internal/stremio"
@@ -18,7 +20,8 @@ import (
 )
 
 func New() *cobra.Command {
-	a := configuredApp()
+	verbose := false
+	a := configuredApp(&verbose)
 	root := &cobra.Command{
 		Use: "lemmewatch [QUERY...]", Short: "Find and stream media", SilenceUsage: true, SilenceErrors: true,
 		Args: cobra.ArbitraryArgs,
@@ -29,17 +32,23 @@ func New() *cobra.Command {
 			return a.Watch(cmd.Context(), strings.Join(args, " "))
 		},
 	}
+	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "show sanitized HTTP diagnostics")
 	root.AddCommand(watchCommand(a), searchCommand(a), streamsCommand(a), cacheCommand(a), playCommand(a))
 	return root
 }
 
-func configuredApp() app.App {
-	httpClient := &http.Client{Timeout: 20 * time.Second}
+func configuredApp(verbose *bool) app.App {
+	httpClient := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Verbose: verbose, Output: os.Stderr}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ForceAttemptHTTP2 = false
+	transport.TLSClientConfig = &tls.Config{NextProtos: []string{"http/1.1"}}
+	transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
+	torboxHTTP := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Base: transport, Verbose: verbose, Output: os.Stderr}}
 	playerName := env("LEMMEWATCH_PLAYER", "mpv")
 	return app.App{
 		Catalog: catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
 		Streams: stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient},
-		TorBox:  torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: os.Getenv("TORBOX_API_TOKEN"), HTTP: httpClient},
+		TorBox:  torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: os.Getenv("TORBOX_API_TOKEN"), HTTP: torboxHTTP},
 		Player:  player.Player{Executable: playerName, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
 		In:      os.Stdin, Out: os.Stdout, Err: os.Stderr,
 	}

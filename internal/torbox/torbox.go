@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -39,9 +40,15 @@ type file struct {
 }
 
 func (c Client) Cached(ctx context.Context, hashes []string) (map[string]bool, error) {
+	unique := make([]string, 0, len(hashes))
+	seen := make(map[string]bool, len(hashes))
 	for _, hash := range hashes {
 		if !validHash(hash) {
 			return nil, fmt.Errorf("invalid torrent info hash")
+		}
+		if !seen[hash] {
+			seen[hash] = true
+			unique = append(unique, hash)
 		}
 	}
 	u, err := c.endpoint("torrents/checkcached")
@@ -49,24 +56,42 @@ func (c Client) Cached(ctx context.Context, hashes []string) (map[string]bool, e
 		return nil, err
 	}
 	q := u.Query()
-	q.Set("hash", strings.Join(hashes, ","))
 	q.Set("format", "object")
 	u.RawQuery = q.Encode()
-	var payload envelope[map[string]json.RawMessage]
-	if err := c.get(ctx, u, &payload); err != nil {
-		return nil, fmt.Errorf("TorBox cache check: %w", err)
-	}
-	result := make(map[string]bool, len(hashes))
-	for _, hash := range hashes {
-		raw, ok := payload.Data[hash]
-		if !ok {
-			continue
+	result := make(map[string]bool, len(unique))
+	const batchSize = 500
+	for start := 0; start < len(unique); start += batchSize {
+		end := min(start+batchSize, len(unique))
+		body, err := json.Marshal(map[string][]string{"hashes": unique[start:end]})
+		if err != nil {
+			return nil, fmt.Errorf("TorBox cache request: %w", err)
 		}
-		var cached bool
-		if json.Unmarshal(raw, &cached) == nil {
-			result[hash] = cached
-		} else {
-			result[hash] = string(raw) != "null" && string(raw) != "false"
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("TorBox cache request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		c.authorize(req)
+		res, err := c.HTTP.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("TorBox cache check: %w", requestError("request", err))
+		}
+		var payload envelope[map[string]json.RawMessage]
+		decodeErr := json.NewDecoder(res.Body).Decode(&payload)
+		res.Body.Close()
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			return nil, fmt.Errorf("TorBox cache check: HTTP %d", res.StatusCode)
+		}
+		if decodeErr != nil || !payload.Success {
+			return nil, fmt.Errorf("TorBox cache check returned invalid response")
+		}
+		for hash, raw := range payload.Data {
+			var cached bool
+			if json.Unmarshal(raw, &cached) == nil {
+				result[hash] = cached
+			} else {
+				result[hash] = string(raw) != "null" && string(raw) != "false"
+			}
 		}
 	}
 	return result, nil
@@ -97,7 +122,7 @@ func (c Client) Resolve(ctx context.Context, hash string, videoIndex int) (strin
 	c.authorize(req)
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("TorBox torrent creation failed")
+		return "", requestError("TorBox torrent creation", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
@@ -162,7 +187,11 @@ func (c Client) endpoint(suffix string) (*url.URL, error) {
 	u.Path = path.Join(u.Path, suffix)
 	return u, nil
 }
-func (c Client) authorize(req *http.Request) { req.Header.Set("Authorization", "Bearer "+c.Token) }
+func (c Client) authorize(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "lemmewatch/0.1")
+}
 func (c Client) get(ctx context.Context, u *url.URL, dst any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -171,7 +200,7 @@ func (c Client) get(ctx context.Context, u *url.URL, dst any) error {
 	c.authorize(req)
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed")
+		return requestError("request", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
@@ -181,6 +210,17 @@ func (c Client) get(ctx context.Context, u *url.URL, dst any) error {
 		return fmt.Errorf("invalid response")
 	}
 	return nil
+}
+
+func requestError(operation string, err error) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("%s timed out", operation)
+	case errors.Is(err, context.Canceled):
+		return fmt.Errorf("%s cancelled", operation)
+	default:
+		return fmt.Errorf("%s connection failed", operation)
+	}
 }
 
 func validHash(hash string) bool {

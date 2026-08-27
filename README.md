@@ -35,6 +35,9 @@ lemmewatch cache HASH...
 lemmewatch play [--file-index=INDEX] HASH
 ```
 
+Add `--verbose` to show sanitized HTTP method, host/path, status, duration, and
+failure class. Query strings are omitted because TorBox URLs may contain tokens.
+
 Bare query and `watch` run movie flow: search, select movie, query stream addon,
 filter to cached candidates, select stream, resolve through TorBox, and launch
 player. Series playback is not implemented yet.

@@ -10,7 +10,13 @@ import (
 func TestStreamsNormalizesDeduplicatesAndRanks(t *testing.T) {
 	hashA := "0123456789abcdef0123456789abcdef01234567"
 	hashB := "abcdef0123456789abcdef0123456789abcdef01"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("User-Agent"); got != "lemmewatch/0.1" {
+			t.Errorf("User-Agent = %q", got)
+		}
+		if got := r.Header.Get("Accept"); got != "application/json" {
+			t.Errorf("Accept = %q", got)
+		}
 		_, _ = w.Write([]byte(`{"streams":[` +
 			`{"name":"Torrentio 1080p","title":"👤 50 2.5 GB","infoHash":"` + hashA + `","fileIdx":1},` +
 			`{"name":"duplicate","title":"x","infoHash":"` + hashA + `","fileIdx":1},` +
