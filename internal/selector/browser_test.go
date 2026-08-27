@@ -218,6 +218,22 @@ func TestFilterEditingShortcuts(t *testing.T) {
 	}
 }
 
+func TestFilterAcceptsSpaces(t *testing.T) {
+	m := newBrowser(testChoice{label: "one piece"})
+	m.filtering = true
+	for _, message := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("one")},
+		{Type: tea.KeySpace},
+		{Type: tea.KeyRunes, Runes: []rune("piece")},
+	} {
+		next, _ := m.Update(message)
+		m = next.(browserModel[testChoice])
+	}
+	if m.current().filter != "one piece" || len(m.filteredCurrent()) != 1 {
+		t.Fatalf("filter = %q, matches = %#v", m.current().filter, m.filteredCurrent())
+	}
+}
+
 func TestQualityCyclePersists(t *testing.T) {
 	saved := -1
 	m := newBrowser(testChoice{label: "parent"})
@@ -290,6 +306,22 @@ func TestBrowserRequeriesRoot(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	if m.loading || len(m.levels) != 1 || m.levels[0].items[0].label != "Silo" || m.focusRight || m.activeQuery != "Silo" {
 		t.Fatalf("requery result = %#v", m)
+	}
+}
+
+func TestBrowserQueryAcceptsSpaces(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.querying = true
+	for _, message := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("one")},
+		{Type: tea.KeySpace},
+		{Type: tea.KeyRunes, Runes: []rune("piece")},
+	} {
+		next, _ := m.Update(message)
+		m = next.(browserModel[testChoice])
+	}
+	if m.query != "one piece" {
+		t.Fatalf("query = %q", m.query)
 	}
 }
 

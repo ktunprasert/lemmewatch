@@ -253,7 +253,9 @@ func (m browserModel[T]) updateQuery(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	default:
-		if msg.Type == tea.KeyRunes {
+		if msg.Type == tea.KeySpace {
+			m.query += " "
+		} else if msg.Type == tea.KeyRunes {
 			m.query += string(msg.Runes)
 		}
 	}
@@ -342,7 +344,9 @@ func (m browserModel[T]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	default:
-		if msg.Type == tea.KeyRunes {
+		if msg.Type == tea.KeySpace {
+			*filter += " "
+		} else if msg.Type == tea.KeyRunes {
 			*filter += string(msg.Runes)
 		}
 	}
