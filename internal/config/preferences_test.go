@@ -9,11 +9,14 @@ import (
 func TestPreferencesRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
-	if err := Save(Preferences{Quality: 1080}); err != nil {
+	if err := Save(Preferences{Quality: 1080, MediaTab: "series"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := Load().Quality; got != 1080 {
 		t.Fatalf("quality = %d", got)
+	}
+	if got := Load().MediaTab; got != "series" {
+		t.Fatalf("media tab = %q", got)
 	}
 	info, err := os.Stat(filepath.Join(root, "lemmewatch", "preferences.json"))
 	if err != nil {

@@ -55,7 +55,8 @@ right. `Tab` switches movie/series results. Enter loads or selects, `h`/`l`
 changes focus, `j`/`k` moves, and `/` filters the active pane by name or quality.
 While filtering, Ctrl-W clears a word and Ctrl-U clears the line. In the torrent
 pane, `c` toggles cached/all and `v` cycles quality; quality preference persists
-under the XDG config directory. Uncached playback is not implemented yet.
+under the XDG config directory. The active Movie/Series tab persists there too.
+Uncached playback is not implemented yet.
 
 Temporary TorBox download URLs and API tokens are never printed. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved

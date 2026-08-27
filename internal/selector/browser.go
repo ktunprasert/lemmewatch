@@ -15,7 +15,9 @@ import (
 type BrowserOptions[T item] struct {
 	InitialTitle     string
 	ParentGroups     []string
+	PreferredGroup   string
 	PreferredQuality int
+	SaveGroup        func(string) error
 	SaveQuality      func(int) error
 	ChildTitle       func(T) string
 }
@@ -99,6 +101,11 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.groupIndex = (m.groupIndex + 1) % len(m.options.ParentGroups)
 				m.current().index = 0
 				m.notice = ""
+				if m.options.SaveGroup != nil {
+					if err := m.options.SaveGroup(m.options.ParentGroups[m.groupIndex]); err != nil {
+						m.notice = "Could not save media tab preference"
+					}
+				}
 			}
 		case "c":
 			if m.focusRight && m.rightHasStreams() {
@@ -445,7 +452,8 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 	if title == "" {
 		title = "Search results"
 	}
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, cachedOnly: true, quality: options.PreferredQuality, width: 100, height: 24}
+	groupIndex := preferredGroupIndex(options.ParentGroups, options.PreferredGroup)
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: true, quality: options.PreferredQuality, width: 100, height: 24}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {
@@ -456,4 +464,13 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 		return zero, ErrCancelled
 	}
 	return model.choice, nil
+}
+
+func preferredGroupIndex(groups []string, preferred string) int {
+	for i, group := range groups {
+		if group == preferred {
+			return i
+		}
+	}
+	return 0
 }

@@ -204,6 +204,7 @@ func (a App) Watch(ctx context.Context, query string) error {
 		}
 	}, selector.BrowserOptions[navigationChoice]{
 		ParentGroups:     []string{string(model.Movie), string(model.Series)},
+		PreferredGroup:   preferences.MediaTab,
 		PreferredQuality: preferences.Quality,
 		ChildTitle: func(selected navigationChoice) string {
 			switch selected.kind {
@@ -217,6 +218,10 @@ func (a App) Watch(ctx context.Context, query string) error {
 			default:
 				return "Torrents"
 			}
+		},
+		SaveGroup: func(group string) error {
+			preferences.MediaTab = group
+			return config.Save(preferences)
 		},
 		SaveQuality: func(quality int) error {
 			preferences.Quality = quality

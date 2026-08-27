@@ -128,6 +128,24 @@ func TestBrowserTabsParentGroups(t *testing.T) {
 	}
 }
 
+func TestBrowserPersistsAndRestoresParentGroup(t *testing.T) {
+	saved := ""
+	m := newBrowser(testChoice{label: "Dune", group: "movie"}, testChoice{label: "Silo", group: "series"})
+	m.options.ParentGroups = []string{"movie", "series"}
+	m.options.SaveGroup = func(group string) error { saved = group; return nil }
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = next.(browserModel[testChoice])
+	if saved != "series" {
+		t.Fatalf("saved group = %q", saved)
+	}
+	if got := preferredGroupIndex(m.options.ParentGroups, saved); got != 1 {
+		t.Fatalf("restored group index = %d", got)
+	}
+	if got := preferredGroupIndex(m.options.ParentGroups, "invalid"); got != 0 {
+		t.Fatalf("invalid group index = %d", got)
+	}
+}
+
 func TestBrowserFiltersCacheAndQuality(t *testing.T) {
 	m := newBrowser(testChoice{label: "parent"})
 	m.right.items = []testChoice{{label: "1080p", terminal: true, cached: true, quality: 1080}, {label: "2160p", terminal: true, quality: 2160}}

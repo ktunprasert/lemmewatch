@@ -7,7 +7,8 @@ import (
 )
 
 type Preferences struct {
-	Quality int `json:"quality,omitempty"`
+	Quality  int    `json:"quality,omitempty"`
+	MediaTab string `json:"media_tab,omitempty"`
 }
 
 func Load() Preferences {
