@@ -64,6 +64,24 @@ func TestRightOpensSelectedLeftItem(t *testing.T) {
 	}
 }
 
+func TestRightConfirmsSelectedRightItem(t *testing.T) {
+	m := newBrowser(testChoice{label: "series"})
+	m.focusRight = true
+	m.crumbs = []string{"series"}
+	m.right = pane[testChoice]{title: "Seasons", items: []testChoice{{label: "season 1"}}}
+	m.load = func(_ context.Context, selected testChoice) ([]testChoice, error) {
+		if selected.label != "season 1" {
+			t.Fatalf("selected = %q", selected.label)
+		}
+		return []testChoice{{label: "episode 1"}}, nil
+	}
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = next.(browserModel[testChoice])
+	if len(m.levels) != 2 || !m.loading || command == nil {
+		t.Fatalf("right did not confirm right item: %#v", m)
+	}
+}
+
 func TestBackAtRootDoesNotExit(t *testing.T) {
 	for _, key := range []tea.KeyMsg{{Type: tea.KeyLeft}, {Type: tea.KeyRunes, Runes: []rune{'h'}}, {Type: tea.KeyEscape}} {
 		m := newBrowser(testChoice{label: "movie"})

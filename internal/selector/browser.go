@@ -180,7 +180,7 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "left", "h":
 			m.back()
 		case "right", "l":
-			if !m.focusRight && !m.loading {
+			if !m.loading {
 				return m.confirm()
 			}
 		case "up", "k":
