@@ -38,11 +38,19 @@ type response struct {
 }
 
 func (c Client) Streams(ctx context.Context, imdbID string) ([]model.Stream, error) {
+	return c.streams(ctx, "movie", imdbID)
+}
+
+func (c Client) SeriesStreams(ctx context.Context, episodeID string) ([]model.Stream, error) {
+	return c.streams(ctx, "series", episodeID)
+}
+
+func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stream, error) {
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("stream addon URL: %w", err)
 	}
-	u.Path = path.Join(u.Path, "stream", "movie", imdbID+".json")
+	u.Path = path.Join(u.Path, "stream", mediaType, id+".json")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("stream lookup: %w", err)

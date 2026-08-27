@@ -27,3 +27,10 @@ type Stream struct {
 	Cached    bool
 	Source    string
 }
+
+type Episode struct {
+	ID      string
+	Title   string
+	Season  int
+	Episode int
+}

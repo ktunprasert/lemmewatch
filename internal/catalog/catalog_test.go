@@ -33,3 +33,20 @@ func TestSearchRejectsHTTPErrorWithoutBody(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestEpisodesFiltersSpecials(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/meta/series/tt123.json" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"meta":{"videos":[{"id":"tt123:0:1","title":"Special","season":0,"episode":1},{"id":"tt123:1:1","title":"Pilot","season":1,"episode":1}]}}`))
+	}))
+	defer server.Close()
+	episodes, err := (Client{BaseURL: server.URL, HTTP: server.Client()}).Episodes(context.Background(), "tt123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(episodes) != 1 || episodes[0].ID != "tt123:1:1" || episodes[0].Title != "Pilot" {
+		t.Fatalf("episodes = %#v", episodes)
+	}
+}

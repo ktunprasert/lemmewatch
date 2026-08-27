@@ -38,3 +38,17 @@ func TestStreamsNormalizesDeduplicatesAndRanks(t *testing.T) {
 		t.Fatalf("parsing = %#v", items[1])
 	}
 }
+
+func TestSeriesStreamsUsesEpisodeRoute(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/stream/series/tt123:2:3.json" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"streams":[]}`))
+	}))
+	defer server.Close()
+	_, err := (Client{BaseURL: server.URL, HTTP: server.Client()}).SeriesStreams(context.Background(), "tt123:2:3")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
