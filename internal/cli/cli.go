@@ -45,12 +45,15 @@ func configuredApp(verbose *bool) app.App {
 	transport.TLSClientConfig = &tls.Config{NextProtos: []string{"http/1.1"}}
 	transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	torboxHTTP := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Base: transport, Verbose: verbose, Output: os.Stderr}}
-	playerName := env("LEMMEWATCH_PLAYER", defaultPlayer(runtime.GOOS))
+	playerName, playerArguments := defaultPlayer(runtime.GOOS)
+	if configured := os.Getenv("LEMMEWATCH_PLAYER"); configured != "" {
+		playerName, playerArguments = configured, nil
+	}
 	return app.App{
 		Catalog: catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
 		Streams: stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient},
 		TorBox:  torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: os.Getenv("TORBOX_API_TOKEN"), HTTP: torboxHTTP},
-		Player:  player.Player{Executable: playerName, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
+		Player:  player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
 		In:      os.Stdin, Out: os.Stdout, Err: os.Stderr,
 	}
 }
@@ -133,14 +136,16 @@ func env(key, fallback string) string {
 	return fallback
 }
 
-func defaultPlayer(goos string) string {
+func defaultPlayer(goos string) (string, []string) {
 	switch goos {
 	case "darwin":
-		return "open"
+		return "open", nil
 	case "linux":
-		return "xdg-open"
+		return "xdg-open", nil
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler"}
 	default:
-		return "mpv"
+		return "mpv", nil
 	}
 }
 func oneLine(value string) string {

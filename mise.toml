@@ -21,6 +21,10 @@ run = "go build ./cmd/lemmewatch"
 description = "Cross-compile lemmewatch for Apple Silicon"
 run = "CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -o dist/lemmewatch-darwin-arm64 ./cmd/lemmewatch"
 
+[tasks.build-windows-amd64]
+description = "Cross-compile lemmewatch for Windows x64"
+run = "CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o dist/lemmewatch-windows-amd64.exe ./cmd/lemmewatch"
+
 [tasks.check]
 description = "Format, vet, test, and build"
 run = [

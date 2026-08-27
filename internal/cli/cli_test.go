@@ -36,10 +36,21 @@ func TestRootWithoutQueryShowsHelp(t *testing.T) {
 }
 
 func TestDefaultPlayerUsesPlatformOpener(t *testing.T) {
-	tests := map[string]string{"darwin": "open", "linux": "xdg-open", "windows": "mpv"}
+	tests := map[string]struct {
+		executable string
+		argument   string
+	}{
+		"darwin":  {executable: "open"},
+		"linux":   {executable: "xdg-open"},
+		"windows": {executable: "rundll32", argument: "url.dll,FileProtocolHandler"},
+	}
 	for goos, expected := range tests {
-		if got := defaultPlayer(goos); got != expected {
-			t.Errorf("defaultPlayer(%q) = %q, want %q", goos, got, expected)
+		executable, arguments := defaultPlayer(goos)
+		if executable != expected.executable {
+			t.Errorf("defaultPlayer(%q) executable = %q, want %q", goos, executable, expected.executable)
+		}
+		if expected.argument != "" && (len(arguments) != 1 || arguments[0] != expected.argument) {
+			t.Errorf("defaultPlayer(%q) arguments = %#v", goos, arguments)
 		}
 	}
 }

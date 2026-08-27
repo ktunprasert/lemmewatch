@@ -13,7 +13,8 @@ mise exec -- go build ./cmd/lemmewatch
 ```
 
 Set `TORBOX_API_TOKEN` in ignored `.mise.local.toml` for cache and playback
-operations. Optional configuration:
+operations. An ignored `.env` file is also loaded at startup; existing process
+environment variables take precedence. Optional configuration:
 
 ```text
 LEMMEWATCH_CATALOG_URL
@@ -24,8 +25,9 @@ LEMMEWATCH_PLAYER
 
 `LEMMEWATCH_PLAYER` overrides URL opening. By default, Lemmewatch uses
 `xdg-open` on Linux and `open` on macOS so resolved video URLs open with the
-desktop's configured handler. Set it to `mpv`, `vlc`, or another executable to
-force a specific player.
+desktop's configured handler. Windows uses its registered URL handler through
+`rundll32`. Set it to `mpv`, `vlc`, or another executable to force a specific
+player.
 
 ## Usage
 
@@ -64,4 +66,5 @@ mise exec -- go vet ./...
 mise exec -- go test -race ./...
 mise exec -- go build ./cmd/lemmewatch
 mise run build-darwin-arm64
+mise run build-windows-amd64
 ```
