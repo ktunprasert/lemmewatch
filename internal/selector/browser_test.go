@@ -14,6 +14,24 @@ type choice string
 
 func (c choice) Label() string { return string(c) }
 
+type groupedChoice struct {
+	label string
+	group string
+}
+
+func (c groupedChoice) Label() string { return c.label }
+func (c groupedChoice) Group() string { return c.group }
+
+type streamChoiceTest struct {
+	label   string
+	cached  bool
+	quality int
+}
+
+func (c streamChoiceTest) Label() string     { return c.label }
+func (c streamChoiceTest) IsCached() bool    { return c.cached }
+func (c streamChoiceTest) VideoQuality() int { return c.quality }
+
 func TestBrowserLoadsRightPaneAndChoosesChild(t *testing.T) {
 	m := browserModel[choice, choice]{
 		ctx:     context.Background(),
@@ -81,5 +99,63 @@ func TestBrowserFlattensRemoteLabels(t *testing.T) {
 	}
 	if strings.Contains(view, "\x1b[31m") {
 		t.Fatalf("remote escape retained: %q", view)
+	}
+}
+
+func TestBrowserTabsParentGroups(t *testing.T) {
+	m := browserModel[groupedChoice, choice]{
+		parents: []groupedChoice{{label: "Dune", group: "movie"}, {label: "Silo", group: "series"}},
+		options: BrowserOptions{ParentGroups: []string{"movie", "series"}},
+	}
+	if got := m.filteredParents(); len(got) != 1 || got[0].item.label != "Dune" {
+		t.Fatalf("movie tab = %#v", got)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = next.(browserModel[groupedChoice, choice])
+	if got := m.filteredParents(); len(got) != 1 || got[0].item.label != "Silo" {
+		t.Fatalf("series tab = %#v", got)
+	}
+}
+
+func TestBrowserFiltersCacheAndQuality(t *testing.T) {
+	m := browserModel[choice, streamChoiceTest]{
+		children: []streamChoiceTest{
+			{label: "1080p first", cached: true, quality: 1080},
+			{label: "2160p second", cached: false, quality: 2160},
+		},
+		cachedOnly: true,
+		quality:    1080,
+	}
+	if got := m.filteredChildren(); len(got) != 1 || got[0].item.quality != 1080 {
+		t.Fatalf("cached quality = %#v", got)
+	}
+	m.cachedOnly = false
+	m.quality = 2160
+	if got := m.filteredChildren(); len(got) != 1 || got[0].item.cached {
+		t.Fatalf("all quality = %#v", got)
+	}
+}
+
+func TestFilterEditingShortcuts(t *testing.T) {
+	m := browserModel[choice, choice]{parents: []choice{"one two three"}, filtering: true, leftFilter: "one two three"}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	m = next.(browserModel[choice, choice])
+	if m.leftFilter != "one two" {
+		t.Fatalf("ctrl-w filter = %q", m.leftFilter)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m = next.(browserModel[choice, choice])
+	if m.leftFilter != "" {
+		t.Fatalf("ctrl-u filter = %q", m.leftFilter)
+	}
+}
+
+func TestQualityCyclePersists(t *testing.T) {
+	saved := -1
+	m := browserModel[choice, streamChoiceTest]{focusRight: true, options: BrowserOptions{SaveQuality: func(quality int) error { saved = quality; return nil }}}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	m = next.(browserModel[choice, streamChoiceTest])
+	if m.quality != 2160 || saved != 2160 {
+		t.Fatalf("quality = %d, saved = %d", m.quality, saved)
 	}
 }

@@ -42,10 +42,12 @@ Bare query and `watch` run movie flow: search, select movie, query stream addon,
 filter to cached candidates, select stream, resolve through TorBox, and launch
 player. Series playback is not implemented yet.
 
-Interactive watch uses two panes: search results on the left and cached torrents
-on the right. Enter loads or selects, `h`/`l` changes focus, `j`/`k` moves,
-Page Up/Down pages, and `/` filters the active pane. Escape clears a filter or
-returns to the left pane.
+Interactive watch uses two panes: search results on the left and torrents on the
+right. `Tab` switches movie/series results. Enter loads or selects, `h`/`l`
+changes focus, `j`/`k` moves, and `/` filters the active pane by name or quality.
+While filtering, Ctrl-W clears a word and Ctrl-U clears the line. In the torrent
+pane, `c` toggles cached/all and `v` cycles quality; quality preference persists
+under the XDG config directory. Uncached playback is not implemented yet.
 
 Temporary TorBox download URLs and API tokens are never printed. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved

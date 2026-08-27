@@ -14,6 +14,18 @@ import (
 
 type Loader[P item, C item] func(context.Context, P) ([]C, error)
 
+type BrowserOptions struct {
+	ParentGroups     []string
+	PreferredQuality int
+	SaveQuality      func(int) error
+}
+
+type groupedItem interface{ Group() string }
+type streamItem interface {
+	IsCached() bool
+	VideoQuality() int
+}
+
 type indexed[T item] struct {
 	index int
 	item  T
@@ -29,6 +41,10 @@ type browserModel[P item, C item] struct {
 	parents     []P
 	children    []C
 	load        Loader[P, C]
+	options     BrowserOptions
+	groupIndex  int
+	cachedOnly  bool
+	quality     int
 	leftIndex   int
 	rightIndex  int
 	focusRight  bool
@@ -38,6 +54,7 @@ type browserModel[P item, C item] struct {
 	leftFilter  string
 	rightFilter string
 	openedLabel string
+	notice      string
 	width       int
 	height      int
 	chosen      bool
@@ -75,6 +92,29 @@ func (m browserModel[P, C]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.filtering = true
 			return m, nil
+		case "tab":
+			if !m.focusRight && len(m.options.ParentGroups) > 1 {
+				m.groupIndex = (m.groupIndex + 1) % len(m.options.ParentGroups)
+				m.leftIndex = 0
+				m.notice = ""
+			}
+		case "c":
+			if m.focusRight {
+				m.cachedOnly = !m.cachedOnly
+				m.rightIndex = 0
+				m.notice = ""
+			}
+		case "v":
+			if m.focusRight {
+				m.quality = nextQuality(m.quality)
+				m.rightIndex = 0
+				m.notice = ""
+				if m.options.SaveQuality != nil {
+					if err := m.options.SaveQuality(m.quality); err != nil {
+						m.notice = "Could not save quality preference"
+					}
+				}
+			}
 		case "esc", "left", "h":
 			if m.focusRight {
 				m.focusRight = false
@@ -97,6 +137,10 @@ func (m browserModel[P, C]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focusRight {
 				children := m.filteredChildren()
 				if len(children) > 0 {
+					if stream, ok := any(children[m.rightIndex].item).(streamItem); ok && !stream.IsCached() {
+						m.notice = "Uncached playback is not available yet"
+						return m, nil
+					}
 					m.choice = children[m.rightIndex].item
 					m.chosen = true
 					return m, tea.Quit
@@ -137,6 +181,15 @@ func (m browserModel[P, C]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			runes := []rune(*filter)
 			*filter = string(runes[:len(runes)-1])
 		}
+	case "ctrl+w":
+		*filter = strings.TrimRight(*filter, " ")
+		if end := strings.LastIndex(*filter, " "); end >= 0 {
+			*filter = strings.TrimRight((*filter)[:end+1], " ")
+		} else {
+			*filter = ""
+		}
+	case "ctrl+u":
+		*filter = ""
 	case "ctrl+c":
 		return m, tea.Quit
 	default:
@@ -163,11 +216,34 @@ func (m *browserModel[P, C]) move(delta int) {
 func (m browserModel[P, C]) pageSize() int { return max(1, m.height-6) }
 
 func (m browserModel[P, C]) filteredParents() []indexed[P] {
-	return filterItems(m.parents, m.leftFilter)
+	items := filterItems(m.parents, m.leftFilter)
+	if len(m.options.ParentGroups) == 0 {
+		return items
+	}
+	group := m.options.ParentGroups[m.groupIndex]
+	result := items[:0]
+	for _, value := range items {
+		if grouped, ok := any(value.item).(groupedItem); ok && grouped.Group() == group {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func (m browserModel[P, C]) filteredChildren() []indexed[C] {
-	return filterItems(m.children, m.rightFilter)
+	items := filterItems(m.children, m.rightFilter)
+	result := items[:0]
+	for _, value := range items {
+		stream, ok := any(value.item).(streamItem)
+		if ok && m.cachedOnly && !stream.IsCached() {
+			continue
+		}
+		if ok && m.quality != 0 && stream.VideoQuality() != m.quality {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
 }
 
 func filterItems[T item](items []T, query string) []indexed[T] {
@@ -196,10 +272,21 @@ func (m browserModel[P, C]) View() string {
 
 	parents := m.filteredParents()
 	leftTitle := fmt.Sprintf("Search results  %d", len(parents))
+	if len(m.options.ParentGroups) > 0 {
+		leftTitle = groupTabs(m.options.ParentGroups, m.groupIndex) + fmt.Sprintf("  %d", len(parents))
+	}
 	left := renderBrowserPane(leftTitle, parents, m.leftIndex, leftWidth, rows, !m.focusRight, m.leftFilter, false, nil)
 
 	children := m.filteredChildren()
-	rightTitle := "Torrents"
+	cacheLabel := "Cached"
+	if !m.cachedOnly {
+		cacheLabel = "All"
+	}
+	qualityLabel := "All qualities"
+	if m.quality > 0 {
+		qualityLabel = fmt.Sprintf("%dp", m.quality)
+	}
+	rightTitle := fmt.Sprintf("Torrents  [%s]  [%s]", cacheLabel, qualityLabel)
 	right := renderBrowserPane(rightTitle, children, m.rightIndex, rightWidth, rows, m.focusRight, m.rightFilter, m.loading, m.err)
 
 	breadcrumb := "Search"
@@ -214,7 +301,14 @@ func (m browserModel[P, C]) View() string {
 		}
 		filterHint = headerStyle.Render("Filter: "+filter+"_") + "\n"
 	}
-	help := hintStyle.Render("h/l focus  j/k move  pgup/pgdn page  enter open/select  / filter  esc back  q quit")
+	helpText := "tab movie/series  h/l focus  j/k move  enter open  / filter  esc back"
+	if m.focusRight {
+		helpText = "c cached/all  v quality  h/l focus  j/k move  enter select  / filter  esc back"
+	}
+	if m.notice != "" {
+		helpText = m.notice + "  |  " + helpText
+	}
+	help := hintStyle.Render(helpText)
 	return ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right) + "\n" + filterHint + help + "\n"
 }
 
@@ -267,12 +361,34 @@ func clamp(value, length int) int {
 	return min(max(0, value), length-1)
 }
 
-func Browse[P item, C item](ctx context.Context, input io.Reader, output io.Writer, parents []P, load Loader[P, C]) (C, error) {
+func groupTabs(groups []string, active int) string {
+	labels := make([]string, len(groups))
+	for i, group := range groups {
+		label := strings.ToUpper(group[:1]) + group[1:]
+		if i == active {
+			label = "[" + label + "]"
+		}
+		labels[i] = label
+	}
+	return strings.Join(labels, " ")
+}
+
+func nextQuality(current int) int {
+	qualities := []int{0, 2160, 1080, 720, 480}
+	for i, quality := range qualities {
+		if quality == current {
+			return qualities[(i+1)%len(qualities)]
+		}
+	}
+	return 0
+}
+
+func Browse[P item, C item](ctx context.Context, input io.Reader, output io.Writer, parents []P, load Loader[P, C], options BrowserOptions) (C, error) {
 	var zero C
 	if len(parents) == 0 {
 		return zero, errors.New("no choices")
 	}
-	initial := browserModel[P, C]{ctx: ctx, parents: parents, load: load, width: 100, height: 24}
+	initial := browserModel[P, C]{ctx: ctx, parents: parents, load: load, options: options, cachedOnly: true, quality: options.PreferredQuality, width: 100, height: 24}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

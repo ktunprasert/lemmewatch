@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"lemmewatch/internal/catalog"
+	"lemmewatch/internal/config"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
 	"lemmewatch/internal/selector"
@@ -34,20 +35,23 @@ func (m mediaChoice) Label() string {
 	}
 	return m.Name
 }
+func (m mediaChoice) Group() string { return string(m.Type) }
 
 type streamChoice struct{ model.Stream }
 
 func (s streamChoice) Label() string {
-	cache := ""
+	cache := "uncached"
 	if s.Cached {
-		cache = " [cached]"
+		cache = "cached"
 	}
 	quality := "unknown"
 	if s.Quality > 0 {
 		quality = fmt.Sprintf("%dp", s.Quality)
 	}
-	return fmt.Sprintf("%s%s  seeds:%d  %.2f GB  %s", quality, cache, s.Seeders, float64(s.Size)/1e9, s.Title)
+	return fmt.Sprintf("%s  [%s]  %s", quality, cache, s.Title)
 }
+func (s streamChoice) IsCached() bool    { return s.Cached }
+func (s streamChoice) VideoQuality() int { return s.Quality }
 
 func (a App) Search(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
 	fmt.Fprintf(a.Err, "Searching catalog for %q...\n", query)
@@ -110,7 +114,7 @@ func (a App) Cache(ctx context.Context, hashes []string) (map[string]bool, error
 }
 
 func (a App) Watch(ctx context.Context, query string) error {
-	items, err := a.Search(ctx, query, model.Movie)
+	items, err := a.Search(ctx, query, "")
 	if err != nil {
 		return err
 	}
@@ -118,11 +122,15 @@ func (a App) Watch(ctx context.Context, query string) error {
 	for i, item := range items {
 		choices[i] = mediaChoice{item}
 	}
-	chosen, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, movie mediaChoice) ([]streamChoice, error) {
+	preferences := config.Load()
+	chosen, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, media mediaChoice) ([]streamChoice, error) {
+		if media.Type == model.Series {
+			return nil, fmt.Errorf("series season and episode selection is not implemented yet")
+		}
 		if a.TorBox.Token == "" {
 			return nil, fmt.Errorf("TORBOX_API_TOKEN is required")
 		}
-		streams, err := a.Streams.Streams(ctx, movie.ID)
+		streams, err := a.Streams.Streams(ctx, media.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -139,22 +147,23 @@ func (a App) Watch(ctx context.Context, query string) error {
 		if err != nil {
 			return nil, err
 		}
-		available := make([]model.Stream, 0, len(streams))
-		for _, stream := range streams {
+		for i := range streams {
+			stream := &streams[i]
 			stream.Cached = cached[stream.Hash]
-			if stream.Cached {
-				available = append(available, stream)
-			}
 		}
-		if len(available) == 0 {
-			return nil, fmt.Errorf("no cached streams found")
-		}
-		stremio.Rank(available)
-		result := make([]streamChoice, len(available))
-		for i, stream := range available {
+		stremio.Rank(streams)
+		result := make([]streamChoice, len(streams))
+		for i, stream := range streams {
 			result[i] = streamChoice{stream}
 		}
 		return result, nil
+	}, selector.BrowserOptions{
+		ParentGroups:     []string{string(model.Movie), string(model.Series)},
+		PreferredQuality: preferences.Quality,
+		SaveQuality: func(quality int) error {
+			preferences.Quality = quality
+			return config.Save(preferences)
+		},
 	})
 	if err != nil {
 		return err
