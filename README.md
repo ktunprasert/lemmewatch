@@ -22,7 +22,10 @@ TORBOX_API_URL
 LEMMEWATCH_PLAYER
 ```
 
-`LEMMEWATCH_PLAYER` defaults to `mpv`.
+`LEMMEWATCH_PLAYER` overrides URL opening. By default, Lemmewatch uses
+`xdg-open` on Linux and `open` on macOS so resolved video URLs open with the
+desktop's configured handler. Set it to `mpv`, `vlc`, or another executable to
+force a specific player.
 
 ## Usage
 
@@ -60,4 +63,5 @@ mise exec -- gofmt -w .
 mise exec -- go vet ./...
 mise exec -- go test -race ./...
 mise exec -- go build ./cmd/lemmewatch
+mise run build-darwin-arm64
 ```

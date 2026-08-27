@@ -34,3 +34,12 @@ func TestRootWithoutQueryShowsHelp(t *testing.T) {
 		t.Fatalf("unexpected help: %q", out.String())
 	}
 }
+
+func TestDefaultPlayerUsesPlatformOpener(t *testing.T) {
+	tests := map[string]string{"darwin": "open", "linux": "xdg-open", "windows": "mpv"}
+	for goos, expected := range tests {
+		if got := defaultPlayer(goos); got != expected {
+			t.Errorf("defaultPlayer(%q) = %q, want %q", goos, got, expected)
+		}
+	}
+}

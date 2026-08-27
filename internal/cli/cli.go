@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -44,7 +45,7 @@ func configuredApp(verbose *bool) app.App {
 	transport.TLSClientConfig = &tls.Config{NextProtos: []string{"http/1.1"}}
 	transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	torboxHTTP := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Base: transport, Verbose: verbose, Output: os.Stderr}}
-	playerName := env("LEMMEWATCH_PLAYER", "mpv")
+	playerName := env("LEMMEWATCH_PLAYER", defaultPlayer(runtime.GOOS))
 	return app.App{
 		Catalog: catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
 		Streams: stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient},
@@ -130,6 +131,17 @@ func env(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func defaultPlayer(goos string) string {
+	switch goos {
+	case "darwin":
+		return "open"
+	case "linux":
+		return "xdg-open"
+	default:
+		return "mpv"
+	}
 }
 func oneLine(value string) string {
 	return strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(value)

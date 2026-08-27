@@ -17,6 +17,10 @@ run = "go test -race ./..."
 description = "Build lemmewatch"
 run = "go build ./cmd/lemmewatch"
 
+[tasks.build-darwin-arm64]
+description = "Cross-compile lemmewatch for Apple Silicon"
+run = "CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -o dist/lemmewatch-darwin-arm64 ./cmd/lemmewatch"
+
 [tasks.check]
 description = "Format, vet, test, and build"
 run = [
