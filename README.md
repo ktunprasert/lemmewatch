@@ -38,9 +38,9 @@ lemmewatch play [--file-index=INDEX] HASH
 Add `--verbose` to show sanitized HTTP method, host/path, status, duration, and
 failure class. Query strings are omitted because TorBox URLs may contain tokens.
 
-Bare query and `watch` run movie flow: search, select movie, query stream addon,
-filter to cached candidates, select stream, resolve through TorBox, and launch
-player. Series playback is not implemented yet.
+Bare query and `watch` run movie and series flows. Series traversal adds season
+and episode panes before torrent selection. Selected cached streams resolve
+through TorBox and launch the configured player.
 
 Interactive watch uses two panes: search results on the left and torrents on the
 right. `Tab` switches movie/series results. Enter loads or selects, `h`/`l`

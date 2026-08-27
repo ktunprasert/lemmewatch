@@ -27,19 +27,54 @@ type App struct {
 	Err     io.Writer
 }
 
-type mediaChoice struct{ model.Media }
+type navigationKind int
 
-func (m mediaChoice) Label() string {
-	if m.Year > 0 {
-		return fmt.Sprintf("%s (%d)", m.Name, m.Year)
-	}
-	return m.Name
+const (
+	navigationMedia navigationKind = iota
+	navigationSeason
+	navigationEpisode
+	navigationStream
+)
+
+type navigationChoice struct {
+	kind     navigationKind
+	media    model.Media
+	season   int
+	episodes []model.Episode
+	episode  model.Episode
+	stream   model.Stream
 }
-func (m mediaChoice) Group() string { return string(m.Type) }
 
-type streamChoice struct{ model.Stream }
+func (n navigationChoice) Label() string {
+	switch n.kind {
+	case navigationMedia:
+		if n.media.Year > 0 {
+			return fmt.Sprintf("%s (%d)", n.media.Name, n.media.Year)
+		}
+		return fmt.Sprintf("%s (%s)", n.media.Name, n.media.ID)
+	case navigationSeason:
+		return fmt.Sprintf("Season %d", n.season)
+	case navigationEpisode:
+		return fmt.Sprintf("Episode %d  %s", n.episode.Episode, n.episode.Title)
+	case navigationStream:
+		return streamLabel(n.stream)
+	default:
+		return "Unknown"
+	}
+}
 
-func (s streamChoice) Label() string {
+func (n navigationChoice) Group() string {
+	if n.kind == navigationMedia {
+		return string(n.media.Type)
+	}
+	return ""
+}
+func (n navigationChoice) Terminal() bool { return n.kind == navigationStream }
+func (n navigationChoice) StreamInfo() (bool, int, bool) {
+	return n.stream.Cached, n.stream.Quality, n.kind == navigationStream
+}
+
+func streamLabel(s model.Stream) string {
 	cache := "uncached"
 	if s.Cached {
 		cache = "cached"
@@ -50,8 +85,6 @@ func (s streamChoice) Label() string {
 	}
 	return fmt.Sprintf("%s  [%s]  %s", quality, cache, s.Title)
 }
-func (s streamChoice) IsCached() bool    { return s.Cached }
-func (s streamChoice) VideoQuality() int { return s.Quality }
 
 func (a App) Search(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
 	fmt.Fprintf(a.Err, "Searching catalog for %q...\n", query)
@@ -118,48 +151,69 @@ func (a App) Watch(ctx context.Context, query string) error {
 	if err != nil {
 		return err
 	}
-	choices := make([]mediaChoice, len(items))
+	choices := make([]navigationChoice, len(items))
 	for i, item := range items {
-		choices[i] = mediaChoice{item}
+		choices[i] = navigationChoice{kind: navigationMedia, media: item}
 	}
 	preferences := config.Load()
-	chosen, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, media mediaChoice) ([]streamChoice, error) {
-		if media.Type == model.Series {
-			return nil, fmt.Errorf("series season and episode selection is not implemented yet")
+	chosen, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
+		switch selected.kind {
+		case navigationMedia:
+			if selected.media.Type == model.Movie {
+				streams, streamErr := a.Streams.Streams(ctx, selected.media.ID)
+				return a.prepareStreams(ctx, streams, streamErr)
+			}
+			episodes, err := a.Catalog.Episodes(ctx, selected.media.ID)
+			if err != nil {
+				return nil, err
+			}
+			bySeason := make(map[int][]model.Episode)
+			for _, episode := range episodes {
+				bySeason[episode.Season] = append(bySeason[episode.Season], episode)
+			}
+			for season := range bySeason {
+				sort.SliceStable(bySeason[season], func(i, j int) bool {
+					return bySeason[season][i].Episode < bySeason[season][j].Episode
+				})
+			}
+			seasons := make([]int, 0, len(bySeason))
+			for season := range bySeason {
+				seasons = append(seasons, season)
+			}
+			sort.Ints(seasons)
+			result := make([]navigationChoice, len(seasons))
+			for i, season := range seasons {
+				result[i] = navigationChoice{kind: navigationSeason, season: season, episodes: bySeason[season]}
+			}
+			return result, nil
+		case navigationSeason:
+			result := make([]navigationChoice, len(selected.episodes))
+			for i, episode := range selected.episodes {
+				result[i] = navigationChoice{kind: navigationEpisode, episode: episode}
+			}
+			return result, nil
+		case navigationEpisode:
+			streams, streamErr := a.Streams.SeriesStreams(ctx, selected.episode.ID)
+			return a.prepareStreams(ctx, streams, streamErr)
+		default:
+			return nil, fmt.Errorf("item cannot be opened")
 		}
-		if a.TorBox.Token == "" {
-			return nil, fmt.Errorf("TORBOX_API_TOKEN is required")
-		}
-		streams, err := a.Streams.Streams(ctx, media.ID)
-		if err != nil {
-			return nil, err
-		}
-		if len(streams) == 0 {
-			return nil, fmt.Errorf("no playable streams found")
-		}
-		hashes := make([]string, len(streams))
-		for i := range streams {
-			hashes[i] = streams[i].Hash
-		}
-		cacheCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		defer cancel()
-		cached, err := a.TorBox.Cached(cacheCtx, hashes)
-		if err != nil {
-			return nil, err
-		}
-		for i := range streams {
-			stream := &streams[i]
-			stream.Cached = cached[stream.Hash]
-		}
-		stremio.Rank(streams)
-		result := make([]streamChoice, len(streams))
-		for i, stream := range streams {
-			result[i] = streamChoice{stream}
-		}
-		return result, nil
-	}, selector.BrowserOptions{
+	}, selector.BrowserOptions[navigationChoice]{
 		ParentGroups:     []string{string(model.Movie), string(model.Series)},
 		PreferredQuality: preferences.Quality,
+		ChildTitle: func(selected navigationChoice) string {
+			switch selected.kind {
+			case navigationMedia:
+				if selected.media.Type == model.Series {
+					return "Seasons"
+				}
+				return "Torrents"
+			case navigationSeason:
+				return "Episodes"
+			default:
+				return "Torrents"
+			}
+		},
 		SaveQuality: func(quality int) error {
 			preferences.Quality = quality
 			return config.Save(preferences)
@@ -169,10 +223,41 @@ func (a App) Watch(ctx context.Context, query string) error {
 		return err
 	}
 	fmt.Fprintln(a.Err, "Resolving stream through TorBox...")
-	resolved, err := a.TorBox.Resolve(ctx, chosen.Hash, chosen.FileIndex)
+	resolved, err := a.TorBox.Resolve(ctx, chosen.stream.Hash, chosen.stream.FileIndex)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(a.Err, "Launching player...")
 	return a.Player.Play(ctx, resolved)
+}
+
+func (a App) prepareStreams(ctx context.Context, streams []model.Stream, streamErr error) ([]navigationChoice, error) {
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if a.TorBox.Token == "" {
+		return nil, fmt.Errorf("TORBOX_API_TOKEN is required")
+	}
+	if len(streams) == 0 {
+		return nil, fmt.Errorf("no playable streams found")
+	}
+	hashes := make([]string, len(streams))
+	for i := range streams {
+		hashes[i] = streams[i].Hash
+	}
+	cacheCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	cached, err := a.TorBox.Cached(cacheCtx, hashes)
+	if err != nil {
+		return nil, err
+	}
+	for i := range streams {
+		streams[i].Cached = cached[streams[i].Hash]
+	}
+	stremio.Rank(streams)
+	result := make([]navigationChoice, len(streams))
+	for i, stream := range streams {
+		result[i] = navigationChoice{kind: navigationStream, stream: stream}
+	}
+	return result, nil
 }
