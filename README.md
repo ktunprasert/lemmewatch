@@ -62,6 +62,9 @@ Playback leaves the browser open. Press `s` to stop a directly managed player,
 or navigate back through episodes and titles while it runs. Native `open`,
 `xdg-open`, and Windows URL handoff cannot stop the external application.
 `lemmewatch history` lists up to 100 recently played top-level IMDb titles.
+Press `Ctrl-P` to run a new movie/series search without leaving the browser.
+Right/`l` opens the active left item when its child pane is not loaded; only `q`
+exits the browser.
 
 Temporary TorBox download URLs and API tokens are never printed. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved

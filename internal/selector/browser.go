@@ -21,6 +21,7 @@ type BrowserOptions[T item] struct {
 	SaveQuality      func(int) error
 	ChildTitle       func(T) string
 	Play             func(context.Context, T) error
+	Requery          func(context.Context, string) ([]T, error)
 }
 
 type groupedItem interface{ Group() string }
@@ -47,6 +48,10 @@ type loaded[T item] struct {
 }
 
 type playFinished struct{ err error }
+type requeryFinished[T item] struct {
+	items []T
+	err   error
+}
 
 type browserModel[T item] struct {
 	ctx         context.Context
@@ -60,6 +65,8 @@ type browserModel[T item] struct {
 	loading     bool
 	err         error
 	filtering   bool
+	querying    bool
+	query       string
 	cachedOnly  bool
 	quality     int
 	notice      string
@@ -102,7 +109,25 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.notice = "Playback failed: " + msg.err.Error()
 		}
+	case requeryFinished[T]:
+		m.loading = false
+		if msg.err != nil {
+			m.notice = "Search failed: " + msg.err.Error()
+			break
+		}
+		title := m.options.InitialTitle
+		if title == "" {
+			title = "Search results"
+		}
+		m.levels = []pane[T]{{title: title, items: msg.items}}
+		m.right = pane[T]{}
+		m.crumbs = nil
+		m.focusRight = false
+		m.notice = ""
 	case tea.KeyMsg:
+		if m.querying {
+			return m.updateQuery(msg)
+		}
 		if m.filtering {
 			return m.updateFilter(msg)
 		}
@@ -119,6 +144,11 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "/":
 			m.filtering = true
+		case "ctrl+p":
+			if m.options.Requery != nil && !m.loading {
+				m.querying = true
+				m.query = ""
+			}
 		case "tab":
 			if !m.focusRight && len(m.levels) == 1 && len(m.options.ParentGroups) > 1 {
 				m.groupIndex = (m.groupIndex + 1) % len(m.options.ParentGroups)
@@ -148,22 +178,10 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "esc", "left", "h":
-			if m.focusRight {
-				m.focusRight = false
-			} else if len(m.levels) > 1 {
-				popped := m.levels[len(m.levels)-1]
-				m.levels = m.levels[:len(m.levels)-1]
-				m.right = popped
-				m.crumbs = m.crumbs[:max(0, len(m.crumbs)-1)]
-				m.focusRight = true
-				m.err = nil
-				m.notice = ""
-			} else {
-				return m, tea.Quit
-			}
+			m.back()
 		case "right", "l":
-			if len(m.filteredRight()) > 0 {
-				m.focusRight = true
+			if !m.focusRight && !m.loading {
+				return m.confirm()
 			}
 		case "up", "k":
 			m.move(-1)
@@ -175,6 +193,64 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.move(m.pageSize())
 		case "enter":
 			return m.confirm()
+		}
+	}
+	return m, nil
+}
+
+func (m *browserModel[T]) back() {
+	if m.focusRight {
+		m.focusRight = false
+		return
+	}
+	if len(m.levels) <= 1 {
+		return
+	}
+	popped := m.levels[len(m.levels)-1]
+	m.levels = m.levels[:len(m.levels)-1]
+	m.right = popped
+	m.crumbs = m.crumbs[:max(0, len(m.crumbs)-1)]
+	m.focusRight = true
+	m.err = nil
+	m.notice = ""
+}
+
+func (m browserModel[T]) updateQuery(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.querying = false
+		m.query = ""
+	case "enter":
+		query := strings.TrimSpace(m.query)
+		if query == "" {
+			return m, nil
+		}
+		m.querying = false
+		m.loading = true
+		m.notice = "Searching..."
+		return m, func() tea.Msg {
+			items, err := m.options.Requery(m.ctx, query)
+			return requeryFinished[T]{items: items, err: err}
+		}
+	case "backspace", "ctrl+h":
+		if len(m.query) > 0 {
+			runes := []rune(m.query)
+			m.query = string(runes[:len(runes)-1])
+		}
+	case "ctrl+w":
+		m.query = strings.TrimRight(m.query, " ")
+		if end := strings.LastIndex(m.query, " "); end >= 0 {
+			m.query = strings.TrimRight(m.query[:end+1], " ")
+		} else {
+			m.query = ""
+		}
+	case "ctrl+u":
+		m.query = ""
+	case "ctrl+c":
+		return m, tea.Quit
+	default:
+		if msg.Type == tea.KeyRunes {
+			m.query += string(msg.Runes)
 		}
 	}
 	return m, nil
@@ -376,7 +452,10 @@ func (m browserModel[T]) View() string {
 		}
 		filterHint = headerStyle.Render("Filter: "+filter+"_") + "\n"
 	}
-	helpText := "tab movie/series  h/l focus  j/k move  enter open  / filter  esc back"
+	if m.querying {
+		filterHint = headerStyle.Render("Search: "+m.query+"_") + "\n"
+	}
+	helpText := "tab movie/series  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
 	if m.focusRight {
 		helpText = "h/l focus  j/k move  enter open/select  / filter  esc back"
 		if m.rightHasStreams() {

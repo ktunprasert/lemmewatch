@@ -51,6 +51,30 @@ func TestBrowserLoadsAndChoosesTerminal(t *testing.T) {
 	}
 }
 
+func TestRightOpensSelectedLeftItem(t *testing.T) {
+	m := newBrowser(testChoice{label: "movie"})
+	m.right.items = []testChoice{{label: "stale stream"}}
+	m.load = func(_ context.Context, _ testChoice) ([]testChoice, error) {
+		return []testChoice{{label: "stream"}}, nil
+	}
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = next.(browserModel[testChoice])
+	if !m.loading || command == nil {
+		t.Fatalf("right did not confirm left item: %#v", m)
+	}
+}
+
+func TestBackAtRootDoesNotExit(t *testing.T) {
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyLeft}, {Type: tea.KeyRunes, Runes: []rune{'h'}}, {Type: tea.KeyEscape}} {
+		m := newBrowser(testChoice{label: "movie"})
+		next, command := m.Update(key)
+		m = next.(browserModel[testChoice])
+		if command != nil || len(m.levels) != 1 {
+			t.Fatalf("%q exited or changed root: %#v", key.String(), m)
+		}
+	}
+}
+
 func TestBrowserPromotesChildrenAndBacktracks(t *testing.T) {
 	m := newBrowser(testChoice{label: "series"})
 	m.load = func(_ context.Context, selected testChoice) ([]testChoice, error) {
@@ -220,5 +244,32 @@ func TestBrowserStopsPlayback(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	if m.playing || m.notice != "Playback stopped" {
 		t.Fatalf("stopped playback = %#v", m)
+	}
+}
+
+func TestBrowserRequeriesRoot(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.options.InitialTitle = "Search results"
+	m.options.Requery = func(_ context.Context, query string) ([]testChoice, error) {
+		if query != "Silo" {
+			t.Fatalf("query = %q", query)
+		}
+		return []testChoice{{label: "Silo"}}, nil
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m = next.(browserModel[testChoice])
+	for _, key := range "Silo" {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		m = next.(browserModel[testChoice])
+	}
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if !m.loading || command == nil {
+		t.Fatalf("requery did not start: %#v", m)
+	}
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if m.loading || len(m.levels) != 1 || m.levels[0].items[0].label != "Silo" || m.focusRight {
+		t.Fatalf("requery result = %#v", m)
 	}
 }

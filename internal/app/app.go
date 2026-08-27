@@ -88,6 +88,10 @@ func streamLabel(s model.Stream) string {
 
 func (a App) Search(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
 	fmt.Fprintf(a.Err, "Searching catalog for %q...\n", query)
+	return a.searchCatalog(ctx, query, kind)
+}
+
+func (a App) searchCatalog(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
 	if kind != "" {
 		return a.Catalog.Search(ctx, kind, query)
 	}
@@ -242,6 +246,17 @@ func (a App) Watch(ctx context.Context, query string) error {
 				return err
 			}
 			return nil
+		},
+		Requery: func(searchContext context.Context, query string) ([]navigationChoice, error) {
+			results, err := a.searchCatalog(searchContext, query, "")
+			if err != nil {
+				return nil, err
+			}
+			choices := make([]navigationChoice, len(results))
+			for i, result := range results {
+				choices[i] = navigationChoice{kind: navigationMedia, media: result}
+			}
+			return choices, nil
 		},
 	})
 	if err != nil {
