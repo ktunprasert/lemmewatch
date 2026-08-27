@@ -1,2 +1,31 @@
 [tools]
 go = "1.27.0"
+
+[tasks.fmt]
+description = "Format Go sources"
+run = "gofmt -w ."
+
+[tasks.vet]
+description = "Run Go static analysis"
+run = "go vet ./..."
+
+[tasks.test]
+description = "Run tests with race detector"
+run = "go test -race ./..."
+
+[tasks.build]
+description = "Build lemmewatch"
+run = "go build ./cmd/lemmewatch"
+
+[tasks.check]
+description = "Format, vet, test, and build"
+run = [
+  "gofmt -w .",
+  "go vet ./...",
+  "go test -race ./...",
+  "go build ./cmd/lemmewatch",
+]
+
+[tasks.run]
+description = "Run lemmewatch"
+run = "go run ./cmd/lemmewatch --"
