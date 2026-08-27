@@ -58,6 +58,11 @@ pane, `c` toggles cached/all and `v` cycles quality; quality preference persists
 under the XDG config directory. The active Movie/Series tab persists there too.
 Uncached playback is not implemented yet.
 
+Playback leaves the browser open. Press `s` to stop a directly managed player,
+or navigate back through episodes and titles while it runs. Native `open`,
+`xdg-open`, and Windows URL handoff cannot stop the external application.
+`lemmewatch history` lists up to 100 recently played top-level IMDb titles.
+
 Temporary TorBox download URLs and API tokens are never printed. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved
 URL can expose credentials.

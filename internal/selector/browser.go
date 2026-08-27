@@ -20,6 +20,7 @@ type BrowserOptions[T item] struct {
 	SaveGroup        func(string) error
 	SaveQuality      func(int) error
 	ChildTitle       func(T) string
+	Play             func(context.Context, T) error
 }
 
 type groupedItem interface{ Group() string }
@@ -45,25 +46,29 @@ type loaded[T item] struct {
 	err   error
 }
 
+type playFinished struct{ err error }
+
 type browserModel[T item] struct {
-	ctx        context.Context
-	levels     []pane[T]
-	right      pane[T]
-	load       func(context.Context, T) ([]T, error)
-	options    BrowserOptions[T]
-	crumbs     []string
-	groupIndex int
-	focusRight bool
-	loading    bool
-	err        error
-	filtering  bool
-	cachedOnly bool
-	quality    int
-	notice     string
-	width      int
-	height     int
-	chosen     bool
-	choice     T
+	ctx         context.Context
+	levels      []pane[T]
+	right       pane[T]
+	load        func(context.Context, T) ([]T, error)
+	options     BrowserOptions[T]
+	crumbs      []string
+	groupIndex  int
+	focusRight  bool
+	loading     bool
+	err         error
+	filtering   bool
+	cachedOnly  bool
+	quality     int
+	notice      string
+	width       int
+	height      int
+	chosen      bool
+	choice      T
+	playing     bool
+	stopPlaying context.CancelFunc
 }
 
 var (
@@ -87,13 +92,31 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil && len(msg.items) > 0 {
 			m.focusRight = true
 		}
+	case playFinished:
+		m.playing = false
+		m.stopPlaying = nil
+		if msg.err == nil {
+			m.notice = "Playback launched"
+		} else if errors.Is(msg.err, context.Canceled) {
+			m.notice = "Playback stopped"
+		} else {
+			m.notice = "Playback failed: " + msg.err.Error()
+		}
 	case tea.KeyMsg:
 		if m.filtering {
 			return m.updateFilter(msg)
 		}
 		switch msg.String() {
 		case "ctrl+c", "q":
+			if m.stopPlaying != nil {
+				m.stopPlaying()
+			}
 			return m, tea.Quit
+		case "s":
+			if m.stopPlaying != nil {
+				m.stopPlaying()
+				m.notice = "Stopping playback..."
+			}
 		case "/":
 			m.filtering = true
 		case "tab":
@@ -175,9 +198,22 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			}
-			m.choice = selected
-			m.chosen = true
-			return m, tea.Quit
+			if m.options.Play == nil {
+				m.choice = selected
+				m.chosen = true
+				return m, tea.Quit
+			}
+			if m.playing {
+				m.notice = "Stop current playback before starting another"
+				return m, nil
+			}
+			playContext, cancel := context.WithCancel(m.ctx)
+			m.playing = true
+			m.stopPlaying = cancel
+			m.notice = "Starting playback..."
+			return m, func() tea.Msg {
+				return playFinished{err: m.options.Play(playContext, selected)}
+			}
 		}
 		m.levels = append(m.levels, m.right)
 		m.focusRight = false
@@ -350,6 +386,9 @@ func (m browserModel[T]) View() string {
 	if m.notice != "" {
 		helpText = m.notice + "  |  " + helpText
 	}
+	if m.playing {
+		helpText = "PLAYING  s stop  |  " + helpText
+	}
 	return ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right) + "\n" + filterHint + hintStyle.Render(helpText) + "\n"
 }
 
@@ -460,6 +499,9 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 		return zero, err
 	}
 	model := final.(browserModel[T])
+	if options.Play != nil {
+		return zero, nil
+	}
 	if !model.chosen {
 		return zero, ErrCancelled
 	}

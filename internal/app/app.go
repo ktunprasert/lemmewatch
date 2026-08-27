@@ -156,12 +156,12 @@ func (a App) Watch(ctx context.Context, query string) error {
 		choices[i] = navigationChoice{kind: navigationMedia, media: item}
 	}
 	preferences := config.Load()
-	chosen, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
+	_, err = selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
 		switch selected.kind {
 		case navigationMedia:
 			if selected.media.Type == model.Movie {
 				streams, streamErr := a.Streams.Streams(ctx, selected.media.ID)
-				return a.prepareStreams(ctx, streams, streamErr)
+				return a.prepareStreams(ctx, selected.media, streams, streamErr)
 			}
 			episodes, err := a.Catalog.Episodes(ctx, selected.media.ID)
 			if err != nil {
@@ -183,13 +183,13 @@ func (a App) Watch(ctx context.Context, query string) error {
 			sort.Ints(seasons)
 			result := make([]navigationChoice, len(seasons))
 			for i, season := range seasons {
-				result[i] = navigationChoice{kind: navigationSeason, season: season, episodes: bySeason[season]}
+				result[i] = navigationChoice{kind: navigationSeason, media: selected.media, season: season, episodes: bySeason[season]}
 			}
 			return result, nil
 		case navigationSeason:
 			result := make([]navigationChoice, len(selected.episodes))
 			for i, episode := range selected.episodes {
-				result[i] = navigationChoice{kind: navigationEpisode, episode: episode}
+				result[i] = navigationChoice{kind: navigationEpisode, media: selected.media, episode: episode}
 			}
 			return result, nil
 		case navigationEpisode:
@@ -198,7 +198,7 @@ func (a App) Watch(ctx context.Context, query string) error {
 				streams[i].Season = selected.episode.Season
 				streams[i].Episode = selected.episode.Episode
 			}
-			return a.prepareStreams(ctx, streams, streamErr)
+			return a.prepareStreams(ctx, selected.media, streams, streamErr)
 		default:
 			return nil, fmt.Errorf("item cannot be opened")
 		}
@@ -227,20 +227,30 @@ func (a App) Watch(ctx context.Context, query string) error {
 			preferences.Quality = quality
 			return config.Save(preferences)
 		},
+		Play: func(playContext context.Context, selected navigationChoice) error {
+			resolved, err := a.TorBox.ResolveFile(playContext, selected.stream.Hash, selected.stream.FileIndex, selected.stream.Filename, selected.stream.Season, selected.stream.Episode)
+			if err != nil {
+				return err
+			}
+			if err := config.RecordHistory(config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}); err != nil {
+				return fmt.Errorf("record history: %w", err)
+			}
+			if err := a.Player.Play(playContext, resolved); err != nil {
+				if playContext.Err() != nil {
+					return playContext.Err()
+				}
+				return err
+			}
+			return nil
+		},
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Err, "Resolving stream through TorBox...")
-	resolved, err := a.TorBox.ResolveFile(ctx, chosen.stream.Hash, chosen.stream.FileIndex, chosen.stream.Filename, chosen.stream.Season, chosen.stream.Episode)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintln(a.Err, "Launching player...")
-	return a.Player.Play(ctx, resolved)
+	return nil
 }
 
-func (a App) prepareStreams(ctx context.Context, streams []model.Stream, streamErr error) ([]navigationChoice, error) {
+func (a App) prepareStreams(ctx context.Context, media model.Media, streams []model.Stream, streamErr error) ([]navigationChoice, error) {
 	if streamErr != nil {
 		return nil, streamErr
 	}
@@ -266,7 +276,7 @@ func (a App) prepareStreams(ctx context.Context, streams []model.Stream, streamE
 	stremio.Rank(streams)
 	result := make([]navigationChoice, len(streams))
 	for i, stream := range streams {
-		result[i] = navigationChoice{kind: navigationStream, stream: stream}
+		result[i] = navigationChoice{kind: navigationStream, media: media, stream: stream}
 	}
 	return result, nil
 }

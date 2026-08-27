@@ -188,3 +188,37 @@ func TestQualityCyclePersists(t *testing.T) {
 		t.Fatalf("quality = %d, saved = %d", m.quality, saved)
 	}
 }
+
+func TestBrowserPlaybackKeepsSessionOpen(t *testing.T) {
+	played := false
+	m := newBrowser(testChoice{label: "parent"})
+	m.focusRight = true
+	m.right.items = []testChoice{{label: "stream", terminal: true, cached: true}}
+	m.options.Play = func(context.Context, testChoice) error { played = true; return nil }
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if !m.playing || m.chosen || command == nil {
+		t.Fatalf("playback did not remain in session: %#v", m)
+	}
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if !played || m.playing || m.notice != "Playback launched" {
+		t.Fatalf("playback completion = %#v, played = %t", m, played)
+	}
+}
+
+func TestBrowserStopsPlayback(t *testing.T) {
+	m := newBrowser(testChoice{label: "parent"})
+	m.focusRight = true
+	m.right.items = []testChoice{{label: "stream", terminal: true, cached: true}}
+	m.options.Play = func(ctx context.Context, _ testChoice) error { <-ctx.Done(); return ctx.Err() }
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if m.playing || m.notice != "Playback stopped" {
+		t.Fatalf("stopped playback = %#v", m)
+	}
+}

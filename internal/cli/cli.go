@@ -13,6 +13,7 @@ import (
 
 	"lemmewatch/internal/app"
 	"lemmewatch/internal/catalog"
+	"lemmewatch/internal/config"
 	"lemmewatch/internal/httpx"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
@@ -34,8 +35,21 @@ func New() *cobra.Command {
 		},
 	}
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "show sanitized HTTP diagnostics")
-	root.AddCommand(watchCommand(a), searchCommand(a), streamsCommand(a), cacheCommand(a), playCommand(a))
+	root.AddCommand(watchCommand(a), searchCommand(a), streamsCommand(a), cacheCommand(a), playCommand(a), historyCommand())
 	return root
+}
+
+func historyCommand() *cobra.Command {
+	return &cobra.Command{Use: "history", Short: "List recently played titles", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		entries, err := config.History()
+		if err != nil {
+			return fmt.Errorf("read history: %w", err)
+		}
+		for _, entry := range entries {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", entry.ID, entry.Type, entry.PlayedAt.Format(time.RFC3339), entry.Title)
+		}
+		return nil
+	}}
 }
 
 func configuredApp(verbose *bool) app.App {
