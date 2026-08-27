@@ -235,6 +235,11 @@ func TestBrowserSortsRootAndRestoresRelevance(t *testing.T) {
 	if got := labels(); got != "Zulu,Alpha,Unknown" {
 		t.Fatalf("relevance = %q", got)
 	}
+	setSort('a')
+	setSort('d')
+	if got := labels(); got != "Zulu,Alpha,Unknown" {
+		t.Fatalf("default alias = %q", got)
+	}
 }
 
 func TestBrowserShowsAndCancelsSortMenu(t *testing.T) {
@@ -275,6 +280,52 @@ func TestBrowserFiltersCacheAndQuality(t *testing.T) {
 	m.quality = 2160
 	if got := m.filteredRight(); len(got) != 1 || got[0].item.cached {
 		t.Fatalf("all quality = %#v", got)
+	}
+}
+
+func TestBrowserSortsTorrentResults(t *testing.T) {
+	m := newBrowser(testChoice{label: "parent"})
+	m.focusRight = true
+	m.cachedOnly = false
+	m.right.items = []testChoice{
+		{label: "Zulu", terminal: true, cached: true, quality: 1080},
+		{label: "Alpha", terminal: true, cached: false, quality: 2160},
+		{label: "Beta", terminal: true, cached: true, quality: 720},
+	}
+	labels := func() string {
+		items := m.filteredRight()
+		values := make([]string, len(items))
+		for i, item := range items {
+			values[i] = item.item.label
+		}
+		return strings.Join(values, ",")
+	}
+	setSort := func(key rune) {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		m = next.(browserModel[testChoice])
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		m = next.(browserModel[testChoice])
+	}
+	setSort('Q')
+	if got := labels(); got != "Alpha,Zulu,Beta" {
+		t.Fatalf("quality descending = %q", got)
+	}
+	setSort('c')
+	if got := labels(); got != "Zulu,Beta,Alpha" {
+		t.Fatalf("cached first = %q", got)
+	}
+	setSort('N')
+	if got := labels(); got != "Zulu,Beta,Alpha" {
+		t.Fatalf("name descending = %q", got)
+	}
+	setSort('d')
+	if got := labels(); got != "Zulu,Alpha,Beta" {
+		t.Fatalf("default ranking = %q", got)
+	}
+	setSort('q')
+	setSort('r')
+	if got := labels(); got != "Zulu,Alpha,Beta" {
+		t.Fatalf("default ranking alias = %q", got)
 	}
 }
 
@@ -366,7 +417,7 @@ func TestBrowserStopsPlayback(t *testing.T) {
 	m.options.Play = func(ctx context.Context, _ testChoice) error { <-ctx.Done(); return ctx.Err() }
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	m = next.(browserModel[testChoice])
 	next, _ = m.Update(command())
 	m = next.(browserModel[testChoice])

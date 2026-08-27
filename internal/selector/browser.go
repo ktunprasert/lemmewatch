@@ -43,6 +43,10 @@ const (
 	sortNameDescending
 	sortYearAscending
 	sortYearDescending
+	sortQualityAscending
+	sortQualityDescending
+	sortCachedFirst
+	sortUncachedFirst
 )
 
 type indexed[T item] struct {
@@ -92,6 +96,7 @@ type browserModel[T item] struct {
 	activeQuery string
 	sortMenu    bool
 	sortMode    sortMode
+	streamSort  sortMode
 	helpMenu    bool
 	helpFilter  string
 	helpIndex   int
@@ -172,11 +177,13 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.stopPlaying()
 			}
 			return m, tea.Quit
-		case "s":
+		case "x":
 			if m.stopPlaying != nil {
 				m.stopPlaying()
 				m.notice = "Stopping playback..."
-			} else if !m.focusRight && len(m.levels) == 1 {
+			}
+		case "s":
+			if (!m.focusRight && len(m.levels) == 1) || (m.focusRight && m.rightHasStreams()) {
 				m.sortMenu = true
 			}
 		case "/":
@@ -296,7 +303,8 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "Tab", label: "Toggle movie or series", key: tea.KeyMsg{Type: tea.KeyTab}},
 		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
 		{keys: "Ctrl-P", label: "Run new search", key: tea.KeyMsg{Type: tea.KeyCtrlP}},
-		{keys: "s", label: "Sort or stop playback", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
+		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
+		{keys: "x", label: "Stop playback", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}},
 		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
 		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
 		{keys: "?", label: "Show keybindings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
@@ -317,6 +325,32 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 
 func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.sortMenu = false
+	if m.focusRight && m.rightHasStreams() {
+		switch msg.String() {
+		case "d", "r":
+			m.streamSort = sortRelevance
+		case "q":
+			m.streamSort = sortQualityAscending
+		case "Q":
+			m.streamSort = sortQualityDescending
+		case "c":
+			m.streamSort = sortCachedFirst
+		case "C":
+			m.streamSort = sortUncachedFirst
+		case "n":
+			m.streamSort = sortNameAscending
+		case "N":
+			m.streamSort = sortNameDescending
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			return m, nil
+		default:
+			m.notice = "Unknown torrent sort key"
+		}
+		m.right.index = 0
+		return m, nil
+	}
 	switch msg.String() {
 	case "a":
 		m.sortMode = sortNameAscending
@@ -326,7 +360,7 @@ func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sortMode = sortYearAscending
 	case "Y":
 		m.sortMode = sortYearDescending
-	case "r":
+	case "d", "r":
 		m.sortMode = sortRelevance
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -571,6 +605,43 @@ func (m browserModel[T]) filteredRight() []indexed[T] {
 		}
 		result = append(result, value)
 	}
+	if m.streamSort != sortRelevance {
+		sort.SliceStable(result, func(i, j int) bool {
+			leftStream, leftOK := any(result[i].item).(streamItem)
+			rightStream, rightOK := any(result[j].item).(streamItem)
+			if !leftOK || !rightOK {
+				return false
+			}
+			leftCached, leftQuality, leftIsStream := leftStream.StreamInfo()
+			rightCached, rightQuality, rightIsStream := rightStream.StreamInfo()
+			if !leftIsStream || !rightIsStream {
+				return false
+			}
+			switch m.streamSort {
+			case sortQualityAscending:
+				return leftQuality < rightQuality
+			case sortQualityDescending:
+				return leftQuality > rightQuality
+			case sortCachedFirst:
+				return leftCached && !rightCached
+			case sortUncachedFirst:
+				return !leftCached && rightCached
+			case sortNameAscending, sortNameDescending:
+				leftSortable, leftOK := any(result[i].item).(sortableItem)
+				rightSortable, rightOK := any(result[j].item).(sortableItem)
+				if !leftOK || !rightOK {
+					return false
+				}
+				leftName, _, _ := leftSortable.SortFields()
+				rightName, _, _ := rightSortable.SortFields()
+				if m.streamSort == sortNameAscending {
+					return strings.ToLower(leftName) < strings.ToLower(rightName)
+				}
+				return strings.ToLower(leftName) > strings.ToLower(rightName)
+			}
+			return false
+		})
+	}
 	return result
 }
 
@@ -635,7 +706,7 @@ func (m browserModel[T]) View() string {
 		helpText = m.notice + "  |  " + helpText
 	}
 	if m.playing {
-		helpText = "PLAYING  s stop  |  " + helpText
+		helpText = "PLAYING  x stop  |  " + helpText
 	}
 	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right) + "\n" + hintStyle.Render(helpText) + "\n"
 	var modal string
@@ -643,16 +714,7 @@ func (m browserModel[T]) View() string {
 	case m.helpMenu:
 		modal = m.helpModal()
 	case m.sortMenu:
-		modal = activeBorder.Padding(0, 2).Render(strings.Join([]string{
-			headerStyle.Render("Sort results"),
-			"a   Name ascending",
-			"A   Name descending",
-			"y   Year ascending",
-			"Y   Year descending",
-			"r   Cinemeta relevance",
-			"",
-			hintStyle.Render("Esc cancel"),
-		}, "\n"))
+		modal = sortModal(m.focusRight && m.rightHasStreams())
 	case m.querying:
 		modal = inputModal("Search", m.query, "Enter search  Esc cancel")
 	case m.filtering:
@@ -666,6 +728,31 @@ func (m browserModel[T]) View() string {
 		return base
 	}
 	return overlay(base, modal, width)
+}
+
+func sortModal(torrents bool) string {
+	lines := []string{
+		headerStyle.Render("Sort results"),
+		"a   Name ascending",
+		"A   Name descending",
+		"y   Year ascending",
+		"Y   Year descending",
+		"d/r Default relevance",
+	}
+	if torrents {
+		lines = []string{
+			headerStyle.Render("Sort torrents"),
+			"q   Quality ascending",
+			"Q   Quality descending",
+			"c   Cached first",
+			"C   Uncached first",
+			"n   Name ascending",
+			"N   Name descending",
+			"d/r Default ranking",
+		}
+	}
+	lines = append(lines, "", hintStyle.Render("Esc cancel"))
+	return activeBorder.Padding(0, 2).Render(strings.Join(lines, "\n"))
 }
 
 func inputModal(title, value, help string) string {

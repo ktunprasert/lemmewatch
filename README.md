@@ -67,7 +67,9 @@ Right/`l` opens the active left item when its child pane is not loaded; only `q`
 exits the browser.
 
 At the root, `s` opens a sort-key menu: `a`/`A` sorts title ascending/descending,
-`y`/`Y` sorts year ascending/descending, and `r` restores Cinemeta relevance.
+`y`/`Y` sorts year ascending/descending, and `d` or `r` restores Cinemeta
+relevance. In the torrent pane, `s` offers quality, cache status, name, and
+default ranking sorts. `x` stops directly managed playback.
 Filter, search, sort, and help use modal overlays. Press `?` for a searchable
 keybinding palette; type to filter commands and press Enter to run the selected
 binding.

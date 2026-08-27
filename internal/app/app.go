@@ -74,6 +74,9 @@ func (n navigationChoice) StreamInfo() (bool, int, bool) {
 	return n.stream.Cached, n.stream.Quality, n.kind == navigationStream
 }
 func (n navigationChoice) SortFields() (string, int, bool) {
+	if n.kind == navigationStream {
+		return n.stream.Title, 0, true
+	}
 	return n.media.Name, n.media.Year, n.kind == navigationMedia
 }
 
