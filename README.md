@@ -42,6 +42,11 @@ Bare query and `watch` run movie flow: search, select movie, query stream addon,
 filter to cached candidates, select stream, resolve through TorBox, and launch
 player. Series playback is not implemented yet.
 
+Interactive watch uses two panes: search results on the left and cached torrents
+on the right. Enter loads or selects, `h`/`l` changes focus, `j`/`k` moves,
+Page Up/Down pages, and `/` filters the active pane. Escape clears a filter or
+returns to the left pane.
+
 Temporary TorBox download URLs and API tokens are never printed. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved
 URL can expose credentials.

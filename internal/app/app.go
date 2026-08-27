@@ -118,41 +118,44 @@ func (a App) Watch(ctx context.Context, query string) error {
 	for i, item := range items {
 		choices[i] = mediaChoice{item}
 	}
-	movie, err := selector.Choose(ctx, a.In, a.Out, choices)
-	if err != nil {
-		return err
-	}
-	streams, err := a.LookupStreams(ctx, movie.ID)
-	if err != nil {
-		return err
-	}
-	if len(streams) == 0 {
-		return fmt.Errorf("no playable streams found")
-	}
-	hashes := make([]string, len(streams))
-	for i := range streams {
-		hashes[i] = streams[i].Hash
-	}
-	cached, err := a.Cache(ctx, hashes)
-	if err != nil {
-		return err
-	}
-	available := streams[:0]
-	for _, stream := range streams {
-		stream.Cached = cached[stream.Hash]
-		if stream.Cached {
-			available = append(available, stream)
+	chosen, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, movie mediaChoice) ([]streamChoice, error) {
+		if a.TorBox.Token == "" {
+			return nil, fmt.Errorf("TORBOX_API_TOKEN is required")
 		}
-	}
-	if len(available) == 0 {
-		return fmt.Errorf("no cached streams found")
-	}
-	stremio.Rank(available)
-	streamChoices := make([]streamChoice, len(available))
-	for i, stream := range available {
-		streamChoices[i] = streamChoice{stream}
-	}
-	chosen, err := selector.Choose(ctx, a.In, a.Out, streamChoices)
+		streams, err := a.Streams.Streams(ctx, movie.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(streams) == 0 {
+			return nil, fmt.Errorf("no playable streams found")
+		}
+		hashes := make([]string, len(streams))
+		for i := range streams {
+			hashes[i] = streams[i].Hash
+		}
+		cacheCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		cached, err := a.TorBox.Cached(cacheCtx, hashes)
+		if err != nil {
+			return nil, err
+		}
+		available := make([]model.Stream, 0, len(streams))
+		for _, stream := range streams {
+			stream.Cached = cached[stream.Hash]
+			if stream.Cached {
+				available = append(available, stream)
+			}
+		}
+		if len(available) == 0 {
+			return nil, fmt.Errorf("no cached streams found")
+		}
+		stremio.Rank(available)
+		result := make([]streamChoice, len(available))
+		for i, stream := range available {
+			result[i] = streamChoice{stream}
+		}
+		return result, nil
+	})
 	if err != nil {
 		return err
 	}
