@@ -66,6 +66,9 @@ Press `Ctrl-P` to run a new movie/series search without leaving the browser.
 Right/`l` opens the active left item when its child pane is not loaded; only `q`
 exits the browser.
 
+At the root, `s` opens a sort-key menu: `a`/`A` sorts title ascending/descending,
+`y`/`Y` sorts year ascending/descending, and `r` restores Cinemeta relevance.
+
 Temporary TorBox download URLs and API tokens are never printed. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved
 URL can expose credentials.

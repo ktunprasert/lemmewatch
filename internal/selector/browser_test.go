@@ -16,6 +16,7 @@ type testChoice struct {
 	terminal bool
 	cached   bool
 	quality  int
+	year     int
 }
 
 func (c testChoice) Label() string  { return c.label }
@@ -23,6 +24,9 @@ func (c testChoice) Group() string  { return c.group }
 func (c testChoice) Terminal() bool { return c.terminal }
 func (c testChoice) StreamInfo() (bool, int, bool) {
 	return c.cached, c.quality, c.terminal
+}
+func (c testChoice) SortFields() (string, int, bool) {
+	return c.label, c.year, !c.terminal
 }
 
 func newBrowser(items ...testChoice) browserModel[testChoice] {
@@ -185,6 +189,66 @@ func TestBrowserPersistsAndRestoresParentGroup(t *testing.T) {
 	}
 	if got := preferredGroupIndex(m.options.ParentGroups, "invalid"); got != 0 {
 		t.Fatalf("invalid group index = %d", got)
+	}
+}
+
+func TestBrowserSortsRootAndRestoresRelevance(t *testing.T) {
+	m := newBrowser(
+		testChoice{label: "Zulu", group: "movie", year: 2000},
+		testChoice{label: "Alpha", group: "movie", year: 2020},
+		testChoice{label: "Unknown", group: "movie"},
+	)
+	m.options.ParentGroups = []string{"movie", "series"}
+
+	setSort := func(key rune) {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		m = next.(browserModel[testChoice])
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		m = next.(browserModel[testChoice])
+	}
+	labels := func() string {
+		items := m.filteredCurrent()
+		values := make([]string, len(items))
+		for i, item := range items {
+			values[i] = item.item.label
+		}
+		return strings.Join(values, ",")
+	}
+
+	setSort('a')
+	if got := labels(); got != "Alpha,Unknown,Zulu" {
+		t.Fatalf("name ascending = %q", got)
+	}
+	setSort('A')
+	if got := labels(); got != "Zulu,Unknown,Alpha" {
+		t.Fatalf("name descending = %q", got)
+	}
+	setSort('y')
+	if got := labels(); got != "Zulu,Alpha,Unknown" {
+		t.Fatalf("year ascending = %q", got)
+	}
+	setSort('Y')
+	if got := labels(); got != "Alpha,Zulu,Unknown" {
+		t.Fatalf("year descending = %q", got)
+	}
+	setSort('r')
+	if got := labels(); got != "Zulu,Alpha,Unknown" {
+		t.Fatalf("relevance = %q", got)
+	}
+}
+
+func TestBrowserShowsAndCancelsSortMenu(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune", group: "movie"})
+	m.options.ParentGroups = []string{"movie", "series"}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	m = next.(browserModel[testChoice])
+	if !m.sortMenu || !strings.Contains(ansi.Strip(m.View()), "a name asc") {
+		t.Fatalf("sort menu not visible: %q", ansi.Strip(m.View()))
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = next.(browserModel[testChoice])
+	if m.sortMenu || m.sortMode != sortRelevance {
+		t.Fatalf("sort menu not cancelled: %#v", m)
 	}
 }
 

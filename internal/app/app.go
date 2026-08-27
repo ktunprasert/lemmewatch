@@ -73,6 +73,9 @@ func (n navigationChoice) Terminal() bool { return n.kind == navigationStream }
 func (n navigationChoice) StreamInfo() (bool, int, bool) {
 	return n.stream.Cached, n.stream.Quality, n.kind == navigationStream
 }
+func (n navigationChoice) SortFields() (string, int, bool) {
+	return n.media.Name, n.media.Year, n.kind == navigationMedia
+}
 
 func streamLabel(s model.Stream) string {
 	cache := "uncached"

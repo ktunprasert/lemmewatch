@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,6 +31,19 @@ type terminalItem interface{ Terminal() bool }
 type streamItem interface {
 	StreamInfo() (cached bool, quality int, ok bool)
 }
+type sortableItem interface {
+	SortFields() (name string, year int, ok bool)
+}
+
+type sortMode int
+
+const (
+	sortRelevance sortMode = iota
+	sortNameAscending
+	sortNameDescending
+	sortYearAscending
+	sortYearDescending
+)
 
 type indexed[T item] struct {
 	index int
@@ -70,6 +84,8 @@ type browserModel[T item] struct {
 	querying    bool
 	query       string
 	activeQuery string
+	sortMenu    bool
+	sortMode    sortMode
 	cachedOnly  bool
 	quality     int
 	notice      string
@@ -129,6 +145,9 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.focusRight = false
 		m.notice = ""
 	case tea.KeyMsg:
+		if m.sortMenu {
+			return m.updateSort(msg)
+		}
 		if m.querying {
 			return m.updateQuery(msg)
 		}
@@ -145,6 +164,8 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.stopPlaying != nil {
 				m.stopPlaying()
 				m.notice = "Stopping playback..."
+			} else if !m.focusRight && len(m.levels) == 1 {
+				m.sortMenu = true
 			}
 		case "/":
 			m.filtering = true
@@ -199,6 +220,30 @@ func (m browserModel[T]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m.confirm()
 		}
 	}
+	return m, nil
+}
+
+func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.sortMenu = false
+	switch msg.String() {
+	case "a":
+		m.sortMode = sortNameAscending
+	case "A":
+		m.sortMode = sortNameDescending
+	case "y":
+		m.sortMode = sortYearAscending
+	case "Y":
+		m.sortMode = sortYearDescending
+	case "r":
+		m.sortMode = sortRelevance
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		return m, nil
+	default:
+		m.notice = "Unknown sort key"
+	}
+	m.current().index = 0
 	return m, nil
 }
 
@@ -382,6 +427,38 @@ func (m browserModel[T]) filteredCurrent() []indexed[T] {
 			result = append(result, value)
 		}
 	}
+	if m.sortMode != sortRelevance {
+		sort.SliceStable(result, func(i, j int) bool {
+			left, leftOK := any(result[i].item).(sortableItem)
+			right, rightOK := any(result[j].item).(sortableItem)
+			if !leftOK || !rightOK {
+				return false
+			}
+			leftName, leftYear, leftSortable := left.SortFields()
+			rightName, rightYear, rightSortable := right.SortFields()
+			if !leftSortable || !rightSortable {
+				return false
+			}
+			switch m.sortMode {
+			case sortNameAscending:
+				return strings.ToLower(leftName) < strings.ToLower(rightName)
+			case sortNameDescending:
+				return strings.ToLower(leftName) > strings.ToLower(rightName)
+			case sortYearAscending, sortYearDescending:
+				if leftYear == 0 || rightYear == 0 {
+					return rightYear == 0 && leftYear != 0
+				}
+				if leftYear == rightYear {
+					return strings.ToLower(leftName) < strings.ToLower(rightName)
+				}
+				if m.sortMode == sortYearAscending {
+					return leftYear < rightYear
+				}
+				return leftYear > rightYear
+			}
+			return false
+		})
+	}
 	return result
 }
 
@@ -466,7 +543,10 @@ func (m browserModel[T]) View() string {
 	if m.querying {
 		filterHint = headerStyle.Render("Search: "+m.query+"_") + "\n"
 	}
-	helpText := "tab movie/series  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
+	if m.sortMenu {
+		filterHint = activeBorder.Padding(0, 1).Render("sort  a name asc  A name desc  y year asc  Y year desc  r relevance") + "\n"
+	}
+	helpText := "tab movie/series  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
 	if m.focusRight {
 		helpText = "h/l focus  j/k move  enter open/select  / filter  esc back"
 		if m.rightHasStreams() {
