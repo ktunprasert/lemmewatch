@@ -131,7 +131,6 @@ func (a App) searchCatalog(ctx context.Context, query string, kind model.MediaTy
 	if len(items) == 0 && firstErr != nil {
 		return nil, firstErr
 	}
-	sort.SliceStable(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	return items, nil
 }
 
