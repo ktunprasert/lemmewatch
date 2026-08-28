@@ -14,6 +14,7 @@ import (
 	"lemmewatch/internal/app"
 	"lemmewatch/internal/buildinfo"
 	"lemmewatch/internal/catalog"
+	"lemmewatch/internal/config"
 	"lemmewatch/internal/httpx"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
@@ -59,13 +60,14 @@ func configuredApp(verbose *bool) app.App {
 	transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	torboxHTTP := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Base: transport, Verbose: verbose, Output: os.Stderr}}
 	playerName, playerArguments := defaultPlayer(runtime.GOOS)
-	if configured := os.Getenv("LEMMEWATCH_PLAYER"); configured != "" {
+	preferences := config.Load()
+	if configured := env("LEMMEWATCH_PLAYER", preferences.Player); configured != "" {
 		playerName, playerArguments = configured, nil
 	}
 	return app.App{
 		Catalog: catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
 		Streams: stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient},
-		TorBox:  torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: os.Getenv("TORBOX_API_TOKEN"), HTTP: torboxHTTP},
+		TorBox:  torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: env("TORBOX_API_TOKEN", buildinfo.DefaultTorboxAPIToken), HTTP: torboxHTTP},
 		Player:  player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
 		In:      os.Stdin, Out: os.Stdout, Err: os.Stderr,
 	}

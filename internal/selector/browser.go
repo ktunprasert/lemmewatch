@@ -20,9 +20,14 @@ type BrowserOptions[T item] struct {
 	ParentGroups     []string
 	PreferredGroup   string
 	PreferredQuality int
+	PreferredCached  *bool
+	PreferredPlayer  string
 	PreferredModes   map[string]string
+	ModeOptions      map[string][]ContextMode
 	SaveGroup        func(string) error
 	SaveQuality      func(int) error
+	SaveCached       func(bool) error
+	SavePlayer       func(string) error
 	SaveMode         func(string, string) error
 	ChildTitle       func(T) string
 	Play             func(context.Context, T) error
@@ -112,40 +117,45 @@ type cacheableItem interface{ CacheKey() string }
 type toastExpired struct{ id uint64 }
 
 type browserModel[T item] struct {
-	ctx         context.Context
-	levels      []pane[T]
-	right       pane[T]
-	load        func(context.Context, T) ([]T, error)
-	options     BrowserOptions[T]
-	crumbs      []string
-	groupIndex  int
-	focusRight  bool
-	loading     bool
-	err         error
-	filtering   bool
-	querying    bool
-	query       string
-	activeQuery string
-	sortMenu    bool
-	modeMenu    bool
-	mode        map[string]string
-	sortMode    sortMode
-	streamSort  sortMode
-	helpMenu    bool
-	helpFilter  string
-	helpIndex   int
-	pendingG    bool
-	cachedOnly  bool
-	quality     int
-	notice      string
-	toastID     uint64
-	width       int
-	height      int
-	chosen      bool
-	choice      T
-	playing     bool
-	stopPlaying context.CancelFunc
-	loadCache   map[string][]T
+	ctx               context.Context
+	levels            []pane[T]
+	right             pane[T]
+	load              func(context.Context, T) ([]T, error)
+	options           BrowserOptions[T]
+	crumbs            []string
+	groupIndex        int
+	focusRight        bool
+	loading           bool
+	err               error
+	filtering         bool
+	querying          bool
+	query             string
+	activeQuery       string
+	sortMenu          bool
+	modeMenu          bool
+	mode              map[string]string
+	sortMode          sortMode
+	streamSort        sortMode
+	helpMenu          bool
+	helpFilter        string
+	helpIndex         int
+	settingsMenu      bool
+	settingsIndex     int
+	player            string
+	customPlayer      bool
+	customPlayerValue string
+	pendingG          bool
+	cachedOnly        bool
+	quality           int
+	notice            string
+	toastID           uint64
+	width             int
+	height            int
+	chosen            bool
+	choice            T
+	playing           bool
+	stopPlaying       context.CancelFunc
+	loadCache         map[string][]T
 }
 
 var (
@@ -239,6 +249,12 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		if m.helpMenu {
 			return m.updateHelp(msg)
 		}
+		if m.customPlayer {
+			return m.updateCustomPlayer(msg)
+		}
+		if m.settingsMenu {
+			return m.updateSettings(msg)
+		}
 		if m.sortMenu {
 			return m.updateSort(msg)
 		}
@@ -297,6 +313,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.helpMenu = true
 			m.helpFilter = ""
 			m.helpIndex = 0
+		case "settings":
+			m.settingsMenu = true
+			m.settingsIndex = 0
 		case "ctrl+p":
 			if m.options.Requery != nil && !m.loading {
 				m.querying = true
@@ -464,6 +483,142 @@ func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+var settingModeGroups = []string{"media", "season", "episode", "stream"}
+
+func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.settingsMenu = false
+	case "up", "k":
+		m.settingsIndex = clamp(m.settingsIndex-1, 8)
+	case "down", "j":
+		m.settingsIndex = clamp(m.settingsIndex+1, 8)
+	case "left", "h":
+		m.changeSetting(-1)
+	case "right", "l":
+		m.changeSetting(1)
+	case "enter":
+		if m.settingsIndex == 3 {
+			m.customPlayer = true
+			m.customPlayerValue = m.player
+			if m.player == "mpv" || m.player == "vlc" {
+				m.customPlayerValue = ""
+			}
+		} else {
+			m.changeSetting(1)
+		}
+	case "ctrl+c":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m *browserModel[T]) changeSetting(delta int) {
+	switch m.settingsIndex {
+	case 0:
+		if len(m.options.ParentGroups) > 1 {
+			m.groupIndex = wrapIndex(m.groupIndex+delta, len(m.options.ParentGroups))
+			if m.options.SaveGroup != nil {
+				m.saveSetting(m.options.SaveGroup(m.options.ParentGroups[m.groupIndex]))
+			}
+		}
+	case 1:
+		qualities := []int{0, 2160, 1080, 720, 480}
+		index := 0
+		for i, quality := range qualities {
+			if quality == m.quality {
+				index = i
+			}
+		}
+		m.quality = qualities[wrapIndex(index+delta, len(qualities))]
+		if m.options.SaveQuality != nil {
+			m.saveSetting(m.options.SaveQuality(m.quality))
+		}
+	case 2:
+		m.cachedOnly = !m.cachedOnly
+		if m.options.SaveCached != nil {
+			m.saveSetting(m.options.SaveCached(m.cachedOnly))
+		}
+	case 3:
+		players := []string{"", "mpv", "vlc"}
+		index := 0
+		for i, player := range players {
+			if player == m.player {
+				index = i
+			}
+		}
+		if m.player != "" && m.player != "mpv" && m.player != "vlc" {
+			players = append(players, m.player)
+			index = len(players) - 1
+		}
+		m.player = players[wrapIndex(index+delta, len(players))]
+		if m.options.SavePlayer != nil {
+			m.saveSetting(m.options.SavePlayer(m.player))
+		}
+	default:
+		group := settingModeGroups[m.settingsIndex-4]
+		modes := m.options.ModeOptions[group]
+		if len(modes) == 0 {
+			return
+		}
+		index := 0
+		for i, mode := range modes {
+			if mode.Key == m.mode[group] {
+				index = i
+			}
+		}
+		if m.mode == nil {
+			m.mode = make(map[string]string)
+		}
+		m.mode[group] = modes[wrapIndex(index+delta, len(modes))].Key
+		if m.options.SaveMode != nil {
+			m.saveSetting(m.options.SaveMode(group, m.mode[group]))
+		}
+	}
+}
+
+func (m *browserModel[T]) saveSetting(err error) {
+	if err != nil {
+		m.notice = "Could not save preference"
+	}
+}
+
+func (m browserModel[T]) updateCustomPlayer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.customPlayer = false
+	case "enter":
+		m.player = strings.TrimSpace(m.customPlayerValue)
+		m.customPlayer = false
+		if m.options.SavePlayer != nil {
+			m.saveSetting(m.options.SavePlayer(m.player))
+		}
+	case "backspace", "ctrl+h":
+		if len(m.customPlayerValue) > 0 {
+			runes := []rune(m.customPlayerValue)
+			m.customPlayerValue = string(runes[:len(runes)-1])
+		}
+	case "ctrl+u":
+		m.customPlayerValue = ""
+	case "ctrl+c":
+		return m, tea.Quit
+	default:
+		if msg.Type == tea.KeySpace {
+			m.customPlayerValue += " "
+		} else if msg.Type == tea.KeyRunes {
+			m.customPlayerValue += string(msg.Runes)
+		}
+	}
+	return m, nil
+}
+
+func wrapIndex(index, length int) int {
+	if length == 0 {
+		return 0
+	}
+	return (index%length + length) % length
+}
+
 func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 	bindings := []helpBinding{
 		{keys: "Enter / Right / l", label: "Open or confirm", key: tea.KeyMsg{Type: tea.KeyEnter}},
@@ -484,6 +639,7 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
 		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
 		{keys: "?", label: "Show keybindings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
+		{keys: "Settings", label: "Change saved defaults", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("settings")}},
 		{keys: "q", label: "Quit", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
 	}
 	if len(m.options.ParentGroups) > 1 {
@@ -962,6 +1118,10 @@ func (m browserModel[T]) View() string {
 	switch {
 	case m.helpMenu:
 		modal = m.helpModal()
+	case m.customPlayer:
+		modal = inputModal("Custom player", m.customPlayerValue, "Enter save  Esc cancel")
+	case m.settingsMenu:
+		modal = m.settingsModal()
 	case m.sortMenu:
 		modal = sortModal(m.focusRight && m.rightHasStreams())
 	case m.modeMenu:
@@ -1112,6 +1272,52 @@ func (m browserModel[T]) helpModal() string {
 		}
 	}
 	lines = append(lines, "", hintStyle.Render("Type to filter  Up/Down select  Enter run  Esc close"))
+	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
+}
+
+func (m browserModel[T]) settingsModal() string {
+	group := "Movie"
+	if len(m.options.ParentGroups) > 0 {
+		group = strings.ToUpper(m.options.ParentGroups[m.groupIndex][:1]) + m.options.ParentGroups[m.groupIndex][1:]
+	}
+	quality := "All"
+	if m.quality != 0 {
+		quality = fmt.Sprintf("%dp", m.quality)
+	}
+	cached := "Cached only"
+	if !m.cachedOnly {
+		cached = "All torrents"
+	}
+	player := m.player
+	if player == "" {
+		player = "System default"
+	}
+	values := []string{group, quality, cached, player}
+	labels := []string{"Media type", "Quality", "Availability", "Player"}
+	for _, modeGroup := range settingModeGroups {
+		modes := m.options.ModeOptions[modeGroup]
+		value := "Default"
+		key := m.mode[modeGroup]
+		for i, mode := range modes {
+			if key == mode.Key || key == "" && i == 0 {
+				value = mode.Name
+				break
+			}
+		}
+		labels = append(labels, strings.ToUpper(modeGroup[:1])+modeGroup[1:]+" detail")
+		values = append(values, value)
+	}
+	lines := []string{headerStyle.Render("Settings"), ""}
+	for i := range labels {
+		line := fmt.Sprintf("%-20s  < %-16s >", labels[i], values[i])
+		if i == m.settingsIndex {
+			line = selectedStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "", hintStyle.Render("Up/Down item  Left/Right change  Enter edit player  Esc close"))
 	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
@@ -1294,7 +1500,11 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 		title = "Search results"
 	}
 	groupIndex := preferredGroupIndex(options.ParentGroups, options.PreferredGroup)
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: true, quality: options.PreferredQuality, mode: options.PreferredModes, activeQuery: options.InitialQuery, width: 100, height: 24}
+	cachedOnly := true
+	if options.PreferredCached != nil {
+		cachedOnly = *options.PreferredCached
+	}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, player: options.PreferredPlayer, activeQuery: options.InitialQuery, width: 100, height: 24}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

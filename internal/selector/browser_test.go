@@ -779,6 +779,58 @@ func TestHelpPaletteCanSelectFilterAction(t *testing.T) {
 	}
 }
 
+func TestHelpPaletteOpensSettings(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.helpMenu = true
+	m.helpFilter = "saved defaults"
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if m.helpMenu || !m.settingsMenu || !strings.Contains(ansi.Strip(m.View()), "Settings") {
+		t.Fatalf("settings did not open: %#v", m)
+	}
+}
+
+func TestSettingsCyclesAndPersistsDefaults(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.options.ParentGroups = []string{"movie", "series"}
+	m.options.ModeOptions = map[string][]ContextMode{"media": {{Key: "y", Name: "Year"}, {Key: "i", Name: "ID"}}}
+	m.mode = map[string]string{"media": "y"}
+	var group, mode string
+	var quality int
+	var cached bool
+	m.options.SaveGroup = func(value string) error { group = value; return nil }
+	m.options.SaveQuality = func(value int) error { quality = value; return nil }
+	m.options.SaveCached = func(value bool) error { cached = value; return nil }
+	m.options.SaveMode = func(savedGroup, value string) error { mode = value; group = savedGroup; return nil }
+	m.settingsMenu = true
+
+	for _, index := range []int{0, 1, 2, 4} {
+		m.settingsIndex = index
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+		m = next.(browserModel[testChoice])
+	}
+	if m.groupIndex != 1 || quality != 2160 || cached || group != "media" || mode != "i" {
+		t.Fatalf("settings state: groupIndex=%d quality=%d cached=%t mode=%s/%s", m.groupIndex, quality, cached, group, mode)
+	}
+}
+
+func TestSettingsAcceptsCustomPlayer(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.settingsMenu = true
+	m.settingsIndex = 3
+	var saved string
+	m.options.SavePlayer = func(value string) error { saved = value; return nil }
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	for _, message := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("my-player")}, {Type: tea.KeyEnter}} {
+		next, _ = m.Update(message)
+		m = next.(browserModel[testChoice])
+	}
+	if m.customPlayer || m.player != "my-player" || saved != "my-player" {
+		t.Fatalf("custom player = %q, saved = %q", m.player, saved)
+	}
+}
+
 func TestBrowserBreadcrumbUsesActiveQuery(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
 	m.activeQuery = "science fiction"

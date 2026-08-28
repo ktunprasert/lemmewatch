@@ -9,7 +9,8 @@ import (
 func TestPreferencesRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
-	if err := Save(Preferences{Quality: 1080, MediaTab: "series", DetailModes: map[string]string{"media": "i"}}); err != nil {
+	cachedOnly := false
+	if err := Save(Preferences{Quality: 1080, MediaTab: "series", CachedOnly: &cachedOnly, Player: "vlc", DetailModes: map[string]string{"media": "i"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := Load().Quality; got != 1080 {
@@ -20,6 +21,9 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	}
 	if got := Load().DetailModes["media"]; got != "i" {
 		t.Fatalf("media detail mode = %q", got)
+	}
+	if got := Load(); got.CachedOnly == nil || *got.CachedOnly || got.Player != "vlc" {
+		t.Fatalf("saved defaults = %#v", got)
 	}
 	info, err := os.Stat(filepath.Join(root, "lemmewatch", "preferences.json"))
 	if err != nil {

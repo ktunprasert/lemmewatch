@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"lemmewatch/internal/buildinfo"
+	"lemmewatch/internal/config"
 )
 
 func TestHelpForms(t *testing.T) {
@@ -85,5 +88,49 @@ func TestDefaultPlayerUsesPlatformOpener(t *testing.T) {
 		if expected.argument != "" && (len(arguments) != 1 || arguments[0] != expected.argument) {
 			t.Errorf("defaultPlayer(%q) arguments = %#v", goos, arguments)
 		}
+	}
+}
+
+func TestConfiguredAppUsesEmbeddedTorboxTokenAsFallback(t *testing.T) {
+	t.Setenv("TORBOX_API_TOKEN", "")
+	original := buildinfo.DefaultTorboxAPIToken
+	buildinfo.DefaultTorboxAPIToken = "embedded-token"
+	t.Cleanup(func() { buildinfo.DefaultTorboxAPIToken = original })
+
+	if got := configuredApp(new(bool)).TorBox.Token; got != "embedded-token" {
+		t.Fatalf("token = %q", got)
+	}
+}
+
+func TestConfiguredAppPrefersEnvironmentTorboxToken(t *testing.T) {
+	t.Setenv("TORBOX_API_TOKEN", "environment-token")
+	original := buildinfo.DefaultTorboxAPIToken
+	buildinfo.DefaultTorboxAPIToken = "embedded-token"
+	t.Cleanup(func() { buildinfo.DefaultTorboxAPIToken = original })
+
+	if got := configuredApp(new(bool)).TorBox.Token; got != "environment-token" {
+		t.Fatalf("token = %q", got)
+	}
+}
+
+func TestConfiguredAppUsesPreferredPlayer(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("LEMMEWATCH_PLAYER", "")
+	if err := config.Save(config.Preferences{Player: "vlc"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := configuredApp(new(bool)).Player.Executable; got != "vlc" {
+		t.Fatalf("player = %q", got)
+	}
+}
+
+func TestConfiguredAppEnvironmentOverridesPreferredPlayer(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("LEMMEWATCH_PLAYER", "custom-player")
+	if err := config.Save(config.Preferences{Player: "vlc"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := configuredApp(new(bool)).Player.Executable; got != "custom-player" {
+		t.Fatalf("player = %q", got)
 	}
 }

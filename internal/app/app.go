@@ -297,7 +297,15 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		SearchGroups:     []string{string(model.Movie), string(model.Series)},
 		PreferredGroup:   preferences.MediaTab,
 		PreferredQuality: preferences.Quality,
+		PreferredCached:  preferences.CachedOnly,
+		PreferredPlayer:  preferences.Player,
 		PreferredModes:   preferences.DetailModes,
+		ModeOptions: map[string][]selector.ContextMode{
+			"media":   {{Key: "y", Name: "Year"}, {Key: "r", Name: "Rating"}, {Key: "i", Name: "ID"}, {Key: "t", Name: "Type"}},
+			"season":  {{Key: "e", Name: "Episodes"}},
+			"episode": {{Key: "a", Name: "Air date"}, {Key: "r", Name: "Rating"}, {Key: "i", Name: "ID"}},
+			"stream":  {{Key: "q", Name: "Quality"}, {Key: "c", Name: "Cached"}, {Key: "z", Name: "Size"}, {Key: "s", Name: "Seeders"}, {Key: "o", Name: "Source"}, {Key: "f", Name: "Filename"}},
+		},
 		ChildTitle: func(selected navigationChoice) string {
 			switch selected.kind {
 			case navigationMedia:
@@ -317,6 +325,14 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		},
 		SaveQuality: func(quality int) error {
 			preferences.Quality = quality
+			return config.Save(preferences)
+		},
+		SaveCached: func(cachedOnly bool) error {
+			preferences.CachedOnly = &cachedOnly
+			return config.Save(preferences)
+		},
+		SavePlayer: func(player string) error {
+			preferences.Player = player
 			return config.Save(preferences)
 		},
 		SaveMode: func(group, mode string) error {
