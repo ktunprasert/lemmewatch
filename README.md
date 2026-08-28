@@ -69,7 +69,8 @@ or navigate back through episodes and titles while it runs. Native `open`,
 `lemmewatch history` opens up to 100 recently played top-level IMDb titles in
 the browser. History starts as a single root pane without movie/series tabs;
 opening titles uses the same season, episode, torrent, and playback flow.
-Press `Ctrl-P` to run a new movie/series search without leaving the browser.
+Press `Ctrl-H` from search or History to open the History root. Press `Ctrl-P`
+from either root to run a new movie/series search and restore its tabs.
 Right/`l` opens the active left item when its child pane is not loaded; only `q`
 exits the browser.
 

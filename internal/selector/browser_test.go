@@ -98,6 +98,33 @@ func TestUnavailableItemUsesStrikethroughStyle(t *testing.T) {
 	}
 }
 
+func TestSwitchesBetweenHistoryAndSearchRoots(t *testing.T) {
+	m := newBrowser(testChoice{label: "search result", group: "movie"})
+	m.options.ParentGroups = []string{"movie", "series"}
+	m.options.SearchGroups = []string{"movie", "series"}
+	m.options.History = func(context.Context) ([]testChoice, error) {
+		return []testChoice{{label: "history item"}}, nil
+	}
+	m.options.Requery = func(context.Context, string) ([]testChoice, error) { return nil, nil }
+
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	m = next.(browserModel[testChoice])
+	if command == nil || !m.loading {
+		t.Fatal("ctrl-h did not load history")
+	}
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if m.levels[0].title != "History" || len(m.options.ParentGroups) != 0 || m.levels[0].items[0].label != "history item" {
+		t.Fatalf("history root = %#v", m)
+	}
+
+	next, _ = m.Update(requeryFinished[testChoice]{items: []testChoice{{label: "new result", group: "movie"}}, query: "Dune"})
+	m = next.(browserModel[testChoice])
+	if m.levels[0].title != "Search results" || len(m.options.ParentGroups) != 2 || m.activeQuery != "Dune" {
+		t.Fatalf("search root = %#v", m)
+	}
+}
+
 func TestBrowserLoadsAndChoosesTerminal(t *testing.T) {
 	m := newBrowser(testChoice{label: "movie"})
 	m.load = func(_ context.Context, parent testChoice) ([]testChoice, error) {

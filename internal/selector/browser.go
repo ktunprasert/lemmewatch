@@ -27,6 +27,8 @@ type BrowserOptions[T item] struct {
 	ChildTitle       func(T) string
 	Play             func(context.Context, T) error
 	Requery          func(context.Context, string) ([]T, error)
+	History          func(context.Context) ([]T, error)
+	SearchGroups     []string
 }
 
 type groupedItem interface{ Group() string }
@@ -74,6 +76,10 @@ type requeryFinished[T item] struct {
 	items []T
 	err   error
 	query string
+}
+type historyFinished[T item] struct {
+	items []T
+	err   error
 }
 
 type helpBinding struct {
@@ -182,14 +188,25 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.notice = "Search failed: " + msg.err.Error()
 			break
 		}
-		title := m.options.InitialTitle
-		if title == "" {
-			title = "Search results"
-		}
+		title := "Search results"
 		m.levels = []pane[T]{{title: title, items: msg.items}}
+		m.options.ParentGroups = m.options.SearchGroups
 		m.right = pane[T]{}
 		m.crumbs = nil
 		m.activeQuery = msg.query
+		m.focusRight = false
+		m.notice = ""
+	case historyFinished[T]:
+		m.loading = false
+		if msg.err != nil {
+			m.notice = "History failed: " + msg.err.Error()
+			break
+		}
+		m.levels = []pane[T]{{title: "History", items: msg.items}}
+		m.right = pane[T]{}
+		m.crumbs = nil
+		m.options.ParentGroups = nil
+		m.activeQuery = "History"
 		m.focusRight = false
 		m.notice = ""
 	case toastExpired:
@@ -241,6 +258,14 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			if m.options.Requery != nil && !m.loading {
 				m.querying = true
 				m.query = ""
+			}
+		case "ctrl+h":
+			if m.options.History != nil && !m.loading {
+				m.loading = true
+				return m, func() tea.Msg {
+					items, err := m.options.History(m.ctx)
+					return historyFinished[T]{items: items, err: err}
+				}
 			}
 		case "tab":
 			if !m.focusRight && len(m.levels) == 1 && len(m.options.ParentGroups) > 1 {
@@ -400,6 +425,9 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 	}
 	if m.options.Requery != nil {
 		bindings = append(bindings, helpBinding{keys: "Ctrl-P", label: "Run new search", key: tea.KeyMsg{Type: tea.KeyCtrlP}})
+	}
+	if m.options.History != nil {
+		bindings = append(bindings, helpBinding{keys: "Ctrl-H", label: "Open history", key: tea.KeyMsg{Type: tea.KeyCtrlH}})
 	}
 	query := strings.ToLower(strings.TrimSpace(m.helpFilter))
 	if query == "" {
@@ -814,7 +842,7 @@ func (m browserModel[T]) View() string {
 	}
 	helpText := "? keys  m mode  s sort  h/l focus  j/k move  enter open  / filter  q quit"
 	if m.options.Requery != nil {
-		helpText = "? keys  m mode  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
+		helpText = "? keys  m mode  s sort  h/l focus  j/k move  enter open  ctrl-h history  ctrl-p search  / filter  q quit"
 	}
 	if len(m.options.ParentGroups) > 1 {
 		helpText = "tab movie/series  " + helpText

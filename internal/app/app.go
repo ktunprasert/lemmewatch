@@ -190,15 +190,23 @@ func (a App) Watch(ctx context.Context, query string) error {
 	if err != nil {
 		return err
 	}
-	return a.browseMedia(ctx, items, "Search results", query, []string{string(model.Movie), string(model.Series)}, true)
+	return a.browseMedia(ctx, items, "Search results", query, []string{string(model.Movie), string(model.Series)})
 }
 
 func (a App) History(ctx context.Context) error {
-	entries, err := config.History()
+	items, err := loadHistoryMedia()
 	if err != nil {
 		return fmt.Errorf("read history: %w", err)
 	}
-	return a.browseMedia(ctx, historyMedia(entries), "History", "History", nil, false)
+	return a.browseMedia(ctx, items, "History", "History", nil)
+}
+
+func loadHistoryMedia() ([]model.Media, error) {
+	entries, err := config.History()
+	if err != nil {
+		return nil, err
+	}
+	return historyMedia(entries), nil
 }
 
 func historyMedia(entries []config.HistoryEntry) []model.Media {
@@ -213,25 +221,22 @@ func historyMedia(entries []config.HistoryEntry) []model.Media {
 	return items
 }
 
-func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle, initialQuery string, parentGroups []string, allowRequery bool) error {
+func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle, initialQuery string, parentGroups []string) error {
 	choices := make([]navigationChoice, len(items))
 	for i, item := range items {
 		choices[i] = navigationChoice{kind: navigationMedia, media: item}
 	}
 	preferences := config.Load()
-	var requery func(context.Context, string) ([]navigationChoice, error)
-	if allowRequery {
-		requery = func(searchContext context.Context, query string) ([]navigationChoice, error) {
-			results, err := a.searchCatalog(searchContext, query, "")
-			if err != nil {
-				return nil, err
-			}
-			choices := make([]navigationChoice, len(results))
-			for i, result := range results {
-				choices[i] = navigationChoice{kind: navigationMedia, media: result}
-			}
-			return choices, nil
+	requery := func(searchContext context.Context, query string) ([]navigationChoice, error) {
+		results, err := a.searchCatalog(searchContext, query, "")
+		if err != nil {
+			return nil, err
 		}
+		choices := make([]navigationChoice, len(results))
+		for i, result := range results {
+			choices[i] = navigationChoice{kind: navigationMedia, media: result}
+		}
+		return choices, nil
 	}
 	_, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
 		switch selected.kind {
@@ -283,6 +288,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		InitialTitle:     initialTitle,
 		InitialQuery:     initialQuery,
 		ParentGroups:     parentGroups,
+		SearchGroups:     []string{string(model.Movie), string(model.Series)},
 		PreferredGroup:   preferences.MediaTab,
 		PreferredQuality: preferences.Quality,
 		PreferredModes:   preferences.DetailModes,
@@ -331,6 +337,17 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			return nil
 		},
 		Requery: requery,
+		History: func(context.Context) ([]navigationChoice, error) {
+			media, err := loadHistoryMedia()
+			if err != nil {
+				return nil, err
+			}
+			choices := make([]navigationChoice, len(media))
+			for i, item := range media {
+				choices[i] = navigationChoice{kind: navigationMedia, media: item}
+			}
+			return choices, nil
+		},
 	})
 	if err != nil {
 		return err
