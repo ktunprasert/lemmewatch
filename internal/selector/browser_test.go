@@ -59,6 +59,15 @@ func TestHistoryRootOmitsSearchAndTabControls(t *testing.T) {
 	}
 }
 
+func TestRootTabsUseSelectionIndicators(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune", group: "movie"}, testChoice{label: "Dark", group: "series"})
+	m.options.ParentGroups = []string{"movie", "series"}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "● Movies") || !strings.Contains(view, "○ Series") {
+		t.Fatalf("tabs = %q", view)
+	}
+}
+
 func TestModePopupSelectsContextualRightColumn(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune", modes: []ContextMode{{Key: "y", Name: "Year", Value: "2021"}, {Key: "i", Name: "ID", Value: "tt1160419"}}})
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})

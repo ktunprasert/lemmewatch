@@ -1472,12 +1472,17 @@ func groupTabs(groups []string, active int) string {
 	labels := make([]string, len(groups))
 	for i, group := range groups {
 		label := strings.ToUpper(group[:1]) + group[1:]
+		if label == "Movie" {
+			label = "Movies"
+		}
 		if i == active {
-			label = "[" + label + "]"
+			label = headerStyle.Render("● " + label)
+		} else {
+			label = hintStyle.Render("○ " + label)
 		}
 		labels[i] = label
 	}
-	return strings.Join(labels, " ")
+	return strings.Join(labels, "    ")
 }
 
 func nextQuality(current int) int {

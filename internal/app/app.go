@@ -32,6 +32,27 @@ type App struct {
 
 type navigationKind int
 
+func (a App) Dashboard(ctx context.Context, input io.Reader, output io.Writer) error {
+	preferences := config.Load()
+	result, err := selector.Dashboard(ctx, input, output, selector.DashboardOptions{Groups: []string{string(model.Movie), string(model.Series)}, PreferredGroup: preferences.MediaTab})
+	if err != nil {
+		return err
+	}
+	a.In, a.Out = input, output
+	switch result.Action {
+	case selector.DashboardSearch:
+		preferences.MediaTab = result.Group
+		if err := config.Save(preferences); err != nil {
+			return fmt.Errorf("save media tab preference: %w", err)
+		}
+		return a.Watch(ctx, result.Query)
+	case selector.DashboardHistory:
+		return a.History(ctx)
+	default:
+		return nil
+	}
+}
+
 func applyPlayerPreference(active *player.Player, fallback player.Player, overridden bool, preference string) error {
 	executable, arguments, err := player.ParseCommand(preference)
 	if preference == "" {

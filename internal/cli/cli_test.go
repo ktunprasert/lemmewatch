@@ -25,16 +25,17 @@ func TestHelpForms(t *testing.T) {
 	}
 }
 
-func TestRootWithoutQueryShowsHelp(t *testing.T) {
+func TestRootWithoutQueryShowsDashboard(t *testing.T) {
 	cmd := New()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
+	cmd.SetIn(strings.NewReader("\x1b"))
 	cmd.SetArgs(nil)
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Available Commands") {
-		t.Fatalf("unexpected help: %q", out.String())
+	if !strings.Contains(out.String(), "What would you like to watch?") {
+		t.Fatalf("unexpected dashboard: %q", out.String())
 	}
 }
 

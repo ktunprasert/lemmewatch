@@ -139,4 +139,6 @@ The Windows build produces `lemmewatch.exe` and
 place it on `PATH`. Explorer and shortcut users can open the sibling GUI
 launcher, which creates `lemmewatch.exe` in a new console hosted by the user's
 configured Windows default terminal. No shell or terminal executable is
-hardcoded.
+hardcoded. Opening the launcher without arguments starts the interactive
+dashboard. Enter searches, Ctrl-H opens history, and Esc exits.
+Tab switches the initial Movie/Series result pane and saves that preference.

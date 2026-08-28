@@ -34,7 +34,7 @@ func New() *cobra.Command {
 				return a.Watch(cmd.Context(), forcedQueryText(forcedQuery, args))
 			}
 			if len(args) == 0 {
-				return cmd.Help()
+				return a.Dashboard(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 			}
 			return a.Watch(cmd.Context(), strings.Join(args, " "))
 		},
