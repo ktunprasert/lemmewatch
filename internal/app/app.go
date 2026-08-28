@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -48,19 +49,57 @@ type navigationChoice struct {
 func (n navigationChoice) Label() string {
 	switch n.kind {
 	case navigationMedia:
-		if n.media.Year > 0 {
-			return fmt.Sprintf("%s (%d)", n.media.Name, n.media.Year)
-		}
-		return fmt.Sprintf("%s (%s)", n.media.Name, n.media.ID)
+		return n.media.Name
 	case navigationSeason:
 		return fmt.Sprintf("Season %d", n.season)
 	case navigationEpisode:
 		return fmt.Sprintf("Episode %d  %s", n.episode.Episode, n.episode.Title)
 	case navigationStream:
-		return streamLabel(n.stream)
+		return n.stream.Title
 	default:
 		return "Unknown"
 	}
+}
+
+func (n navigationChoice) ContextModes() []selector.ContextMode {
+	switch n.kind {
+	case navigationMedia:
+		year := ""
+		if n.media.Year > 0 {
+			year = strconv.Itoa(n.media.Year)
+		}
+		return []selector.ContextMode{{Key: "y", Name: "Year", Value: year}, {Key: "i", Name: "ID", Value: n.media.ID}, {Key: "t", Name: "Type", Value: string(n.media.Type)}}
+	case navigationSeason:
+		return []selector.ContextMode{{Key: "e", Name: "Episodes", Value: fmt.Sprintf("%d episodes", len(n.episodes))}}
+	case navigationEpisode:
+		date := ""
+		if !n.episode.Released.IsZero() {
+			date = n.episode.Released.Format("2006-01-02")
+		}
+		return []selector.ContextMode{{Key: "a", Name: "Air date", Value: date}, {Key: "i", Name: "ID", Value: n.episode.ID}}
+	case navigationStream:
+		quality := ""
+		if n.stream.Quality > 0 {
+			quality = fmt.Sprintf("%dp", n.stream.Quality)
+		}
+		cached := "uncached"
+		if n.stream.Cached {
+			cached = "cached"
+		}
+		return []selector.ContextMode{
+			{Key: "q", Name: "Quality", Value: quality}, {Key: "c", Name: "Cached", Value: cached},
+			{Key: "z", Name: "Size", Value: formatSize(n.stream.Size)}, {Key: "s", Name: "Seeders", Value: strconv.Itoa(n.stream.Seeders)},
+			{Key: "o", Name: "Source", Value: n.stream.Source}, {Key: "f", Name: "Filename", Value: n.stream.Filename},
+		}
+	}
+	return nil
+}
+
+func formatSize(size int64) string {
+	if size <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.2f GB", float64(size)/1e9)
 }
 
 func (n navigationChoice) Group() string {
@@ -78,18 +117,6 @@ func (n navigationChoice) SortFields() (string, int, bool) {
 		return n.stream.Title, 0, true
 	}
 	return n.media.Name, n.media.Year, n.kind == navigationMedia
-}
-
-func streamLabel(s model.Stream) string {
-	cache := "uncached"
-	if s.Cached {
-		cache = "cached"
-	}
-	quality := "unknown"
-	if s.Quality > 0 {
-		quality = fmt.Sprintf("%dp", s.Quality)
-	}
-	return fmt.Sprintf("%s  [%s]  %s", quality, cache, s.Title)
 }
 
 func (a App) Search(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {

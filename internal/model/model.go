@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type MediaType string
 
 const (
@@ -31,8 +33,9 @@ type Stream struct {
 }
 
 type Episode struct {
-	ID      string
-	Title   string
-	Season  int
-	Episode int
+	ID       string
+	Title    string
+	Season   int
+	Episode  int
+	Released time.Time
 }

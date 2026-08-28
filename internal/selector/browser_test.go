@@ -17,7 +17,10 @@ type testChoice struct {
 	cached   bool
 	quality  int
 	year     int
+	modes    []ContextMode
 }
+
+func (c testChoice) ContextModes() []ContextMode { return c.modes }
 
 func (c testChoice) Label() string  { return c.label }
 func (c testChoice) Group() string  { return c.group }
@@ -48,6 +51,21 @@ func TestHistoryRootOmitsSearchAndTabControls(t *testing.T) {
 		if binding.keys == "Tab" || binding.keys == "Ctrl-P" {
 			t.Fatalf("history exposed unavailable binding: %#v", binding)
 		}
+	}
+}
+
+func TestModePopupSelectsContextualRightColumn(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune", modes: []ContextMode{{Key: "y", Name: "Year", Value: "2021"}, {Key: "i", Name: "ID", Value: "tt1160419"}}})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = next.(browserModel[testChoice])
+	if !m.modeMenu || !strings.Contains(ansi.Strip(m.View()), "[i] ID") {
+		t.Fatalf("mode popup missing: %q", ansi.Strip(m.View()))
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = next.(browserModel[testChoice])
+	view := ansi.Strip(m.View())
+	if m.modeMenu || !strings.Contains(view, "Dune") || !strings.Contains(view, "tt1160419") {
+		t.Fatalf("ID mode not rendered: %q", view)
 	}
 }
 

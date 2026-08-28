@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+	"time"
 
 	"lemmewatch/internal/model"
 )
@@ -31,10 +32,11 @@ type response struct {
 type metaResponse struct {
 	Meta struct {
 		Videos []struct {
-			ID      string `json:"id"`
-			Title   string `json:"title"`
-			Season  int    `json:"season"`
-			Episode int    `json:"episode"`
+			ID       string `json:"id"`
+			Title    string `json:"title"`
+			Season   int    `json:"season"`
+			Episode  int    `json:"episode"`
+			Released string `json:"released"`
 		} `json:"videos"`
 	} `json:"meta"`
 }
@@ -96,7 +98,8 @@ func (c Client) Episodes(ctx context.Context, imdbID string) ([]model.Episode, e
 		if video.Season <= 0 || video.Episode <= 0 {
 			continue
 		}
-		episodes = append(episodes, model.Episode{ID: video.ID, Title: video.Title, Season: video.Season, Episode: video.Episode})
+		released, _ := time.Parse(time.RFC3339, video.Released)
+		episodes = append(episodes, model.Episode{ID: video.ID, Title: video.Title, Season: video.Season, Episode: video.Episode, Released: released})
 	}
 	return episodes, nil
 }

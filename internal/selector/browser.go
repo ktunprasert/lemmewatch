@@ -80,6 +80,14 @@ type helpBinding struct {
 	key   tea.KeyMsg
 }
 
+type ContextMode struct {
+	Key, Name, Value string
+}
+
+type contextualItem interface {
+	ContextModes() []ContextMode
+}
+
 type toastExpired struct{ id uint64 }
 
 type browserModel[T item] struct {
@@ -98,6 +106,8 @@ type browserModel[T item] struct {
 	query       string
 	activeQuery string
 	sortMenu    bool
+	modeMenu    bool
+	mode        map[string]string
 	sortMode    sortMode
 	streamSort  sortMode
 	helpMenu    bool
@@ -189,6 +199,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		if m.sortMenu {
 			return m.updateSort(msg)
 		}
+		if m.modeMenu {
+			return m.updateMode(msg)
+		}
 		if m.querying {
 			return m.updateQuery(msg)
 		}
@@ -209,6 +222,10 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		case "s":
 			if (!m.focusRight && len(m.levels) == 1) || (m.focusRight && m.rightHasStreams()) {
 				m.sortMenu = true
+			}
+		case "m":
+			if len(m.contextModes()) > 0 {
+				m.modeMenu = true
 			}
 		case "/":
 			m.filtering = true
@@ -270,6 +287,50 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 	return m, nil
 }
 
+func (m browserModel[T]) contextModes() []ContextMode {
+	var items []indexed[T]
+	if m.focusRight {
+		items = m.filteredRight()
+	} else {
+		items = m.filteredCurrent()
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	contextual, ok := any(items[0].item).(contextualItem)
+	if !ok {
+		return nil
+	}
+	return contextual.ContextModes()
+}
+
+func (m browserModel[T]) updateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.modeMenu = false
+	if msg.String() == "esc" {
+		return m, nil
+	}
+	modes := m.contextModes()
+	for _, mode := range modes {
+		if msg.String() == mode.Key {
+			if m.mode == nil {
+				m.mode = make(map[string]string)
+			}
+			m.mode[modes[0].Name] = mode.Key
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func modeModal(modes []ContextMode) string {
+	lines := []string{headerStyle.Render("Mode"), ""}
+	for _, mode := range modes {
+		lines = append(lines, fmt.Sprintf("[%s] %s", mode.Key, mode.Name))
+	}
+	lines = append(lines, "", hintStyle.Render("Choose mode  Esc cancel"))
+	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
+}
+
 func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	bindings := m.filteredHelpBindings()
 	switch msg.String() {
@@ -326,6 +387,7 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "PgDown", label: "Next page", key: tea.KeyMsg{Type: tea.KeyPgDown}},
 		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
 		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
+		{keys: "m", label: "Choose detail mode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}},
 		{keys: "x", label: "Stop playback", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}},
 		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
 		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
@@ -359,12 +421,16 @@ func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.streamSort = sortRelevance
 		case "q":
 			m.streamSort = sortQualityAscending
+			m.setContextMode("q")
 		case "Q":
 			m.streamSort = sortQualityDescending
+			m.setContextMode("q")
 		case "c":
 			m.streamSort = sortCachedFirst
+			m.setContextMode("c")
 		case "C":
 			m.streamSort = sortUncachedFirst
+			m.setContextMode("c")
 		case "n":
 			m.streamSort = sortNameAscending
 		case "N":
@@ -386,8 +452,10 @@ func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sortMode = sortNameDescending
 	case "y":
 		m.sortMode = sortYearAscending
+		m.setContextMode("y")
 	case "Y":
 		m.sortMode = sortYearDescending
+		m.setContextMode("y")
 	case "d", "r":
 		m.sortMode = sortRelevance
 	case "q", "ctrl+c":
@@ -399,6 +467,17 @@ func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.current().index = 0
 	return m, nil
+}
+
+func (m *browserModel[T]) setContextMode(key string) {
+	modes := m.contextModes()
+	if len(modes) == 0 {
+		return
+	}
+	if m.mode == nil {
+		m.mode = make(map[string]string)
+	}
+	m.mode[modes[0].Name] = key
 }
 
 func (m *browserModel[T]) back() {
@@ -701,7 +780,7 @@ func (m browserModel[T]) View() string {
 		leftTitle = groupTabs(m.options.ParentGroups, m.groupIndex)
 	}
 	leftItems := m.filteredCurrent()
-	left := renderBrowserPane(leftTitle, leftItems, current.index, leftWidth, rows, !m.focusRight, current.filter, false, nil)
+	left := renderBrowserPane(leftTitle, leftItems, current.index, leftWidth, rows, !m.focusRight, current.filter, false, nil, m.mode)
 	rightItems := m.filteredRight()
 	rightTitle := m.right.title
 	if m.rightHasStreams() {
@@ -715,7 +794,7 @@ func (m browserModel[T]) View() string {
 		}
 		rightTitle = fmt.Sprintf("Torrents  [%s]  [%s]", cacheLabel, qualityLabel)
 	}
-	right := renderBrowserPane(rightTitle, rightItems, m.right.index, rightWidth, rows, m.focusRight, m.right.filter, m.loading, m.err)
+	right := renderBrowserPane(rightTitle, rightItems, m.right.index, rightWidth, rows, m.focusRight, m.right.filter, m.loading, m.err, m.mode)
 	breadcrumb := m.activeQuery
 	if breadcrumb == "" {
 		breadcrumb = "Search"
@@ -723,9 +802,9 @@ func (m browserModel[T]) View() string {
 	if len(m.crumbs) > 0 {
 		breadcrumb += " / " + strings.Join(m.crumbs, " / ")
 	}
-	helpText := "? keys  s sort  h/l focus  j/k move  enter open  / filter  q quit"
+	helpText := "? keys  m mode  s sort  h/l focus  j/k move  enter open  / filter  q quit"
 	if m.options.Requery != nil {
-		helpText = "? keys  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
+		helpText = "? keys  m mode  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
 	}
 	if len(m.options.ParentGroups) > 1 {
 		helpText = "tab movie/series  " + helpText
@@ -746,6 +825,8 @@ func (m browserModel[T]) View() string {
 		modal = m.helpModal()
 	case m.sortMenu:
 		modal = sortModal(m.focusRight && m.rightHasStreams())
+	case m.modeMenu:
+		modal = modeModal(m.contextModes())
 	case m.querying:
 		modal = inputModal("Search", m.query, "Enter search  Esc cancel")
 	case m.filtering:
@@ -888,7 +969,7 @@ func (m browserModel[T]) childTitle(value T) string {
 	return "Items"
 }
 
-func renderBrowserPane[T item](title string, items []indexed[T], selected, width, rows int, active bool, filter string, loading bool, loadErr error) string {
+func renderBrowserPane[T item](title string, items []indexed[T], selected, width, rows int, active bool, filter string, loading bool, loadErr error, selectedModes map[string]string) string {
 	contentWidth := max(1, width-2)
 	lines := []string{headerStyle.Render(ansi.Truncate(title, contentWidth, "..."))}
 	if loading {
@@ -906,7 +987,31 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 		start := max(0, min(selected-rows/2, len(items)-rows))
 		end := min(len(items), start+rows)
 		for i := start; i < end; i++ {
-			label := ansi.Truncate(plainLabel(items[i].item.Label()), max(1, contentWidth-2), "...")
+			label := plainLabel(items[i].item.Label())
+			context := ""
+			if contextual, ok := any(items[i].item).(contextualItem); ok {
+				modes := contextual.ContextModes()
+				if len(modes) > 0 {
+					key := selectedModes[modes[0].Name]
+					if key == "" {
+						key = modes[0].Key
+					}
+					for _, mode := range modes {
+						if mode.Key == key {
+							context = plainLabel(mode.Value)
+							break
+						}
+					}
+				}
+			}
+			available := max(1, contentWidth-2)
+			if context != "" {
+				context = ansi.Truncate(context, max(1, available/2), "...")
+				label = ansi.Truncate(label, max(1, available-lipgloss.Width(context)-1), "...")
+				label += strings.Repeat(" ", max(1, available-lipgloss.Width(label)-lipgloss.Width(context))) + hintStyle.Render(context)
+			} else {
+				label = ansi.Truncate(label, available, "...")
+			}
 			row := "  " + label
 			if i == selected {
 				row = selectedStyle.Width(contentWidth).Render("> " + label)
