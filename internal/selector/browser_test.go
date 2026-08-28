@@ -159,6 +159,32 @@ func TestCtrlDAndCtrlUMoveHalfPage(t *testing.T) {
 	}
 }
 
+func TestGGAndGMoveToListBounds(t *testing.T) {
+	m := newBrowser(testChoice{label: "one"}, testChoice{label: "two"}, testChoice{label: "three"})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = next.(browserModel[testChoice])
+	if m.current().index != 2 {
+		t.Fatalf("G index = %d", m.current().index)
+	}
+	for range 2 {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+		m = next.(browserModel[testChoice])
+	}
+	if m.current().index != 0 {
+		t.Fatalf("gg index = %d", m.current().index)
+	}
+}
+
+func TestEscapeClearsFilterBeforeNavigatingBack(t *testing.T) {
+	m := newBrowser(testChoice{label: "one"})
+	m.current().filter = "one"
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = next.(browserModel[testChoice])
+	if m.current().filter != "" || len(m.levels) != 1 {
+		t.Fatalf("escape did not clear filter in place: %#v", m)
+	}
+}
+
 func TestBrowserLoadsAndChoosesTerminal(t *testing.T) {
 	m := newBrowser(testChoice{label: "movie"})
 	m.load = func(_ context.Context, parent testChoice) ([]testChoice, error) {

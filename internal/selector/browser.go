@@ -122,6 +122,7 @@ type browserModel[T item] struct {
 	helpMenu    bool
 	helpFilter  string
 	helpIndex   int
+	pendingG    bool
 	cachedOnly  bool
 	quality     int
 	notice      string
@@ -231,6 +232,13 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		if m.filtering {
 			return m.updateFilter(msg)
 		}
+		if m.pendingG {
+			m.pendingG = false
+			if msg.String() == "g" {
+				m.move(-1 << 30)
+				return m, nil
+			}
+		}
 		switch msg.String() {
 		case "ctrl+c", "q":
 			if m.stopPlaying != nil {
@@ -242,6 +250,10 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 				m.stopPlaying()
 				m.notice = "Stopping playback..."
 			}
+		case "g":
+			m.pendingG = true
+		case "G":
+			m.move(1 << 30)
 		case "s":
 			if (!m.focusRight && len(m.levels) == 1) || (m.focusRight && m.rightHasStreams()) {
 				m.sortMenu = true
@@ -297,7 +309,17 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 					}
 				}
 			}
-		case "esc", "left", "h":
+		case "esc":
+			if m.focusRight && m.right.filter != "" {
+				m.right.filter = ""
+				m.right.index = 0
+			} else if !m.focusRight && m.current().filter != "" {
+				m.current().filter = ""
+				m.current().index = 0
+			} else {
+				m.back()
+			}
+		case "left", "h":
 			m.back()
 		case "right", "l":
 			if !m.loading {
@@ -381,6 +403,10 @@ func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.helpMenu = false
 		m.helpFilter = ""
 		m.helpIndex = 0
+		if selected.keys == "gg" {
+			m.move(-1 << 30)
+			return m, nil
+		}
 		return m.Update(selected.key)
 	case "backspace", "ctrl+h":
 		if len(m.helpFilter) > 0 {
@@ -419,6 +445,8 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "PgDown", label: "Next page", key: tea.KeyMsg{Type: tea.KeyPgDown}},
 		{keys: "Ctrl-D", label: "Move half-page down", key: tea.KeyMsg{Type: tea.KeyCtrlD}},
 		{keys: "Ctrl-U", label: "Move half-page up", key: tea.KeyMsg{Type: tea.KeyCtrlU}},
+		{keys: "gg", label: "Move to first item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g', 'g'}}},
+		{keys: "G", label: "Move to last item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}},
 		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
 		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
 		{keys: "m", label: "Choose detail mode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}},

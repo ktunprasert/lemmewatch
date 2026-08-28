@@ -67,3 +67,21 @@ func TestFutureEpisodeIsUnavailable(t *testing.T) {
 		t.Fatalf("availability: future=%t past=%t", future.Unavailable(), past.Unavailable())
 	}
 }
+
+func TestNavigationDetailModeDefaults(t *testing.T) {
+	cases := []struct {
+		choice navigationChoice
+		key    string
+	}{
+		{choice: navigationChoice{kind: navigationMedia}, key: "y"},
+		{choice: navigationChoice{kind: navigationSeason}, key: "e"},
+		{choice: navigationChoice{kind: navigationEpisode}, key: "a"},
+		{choice: navigationChoice{kind: navigationStream}, key: "q"},
+	}
+	for _, test := range cases {
+		modes := test.choice.ContextModes()
+		if len(modes) == 0 || modes[0].Key != test.key {
+			t.Fatalf("default mode = %#v, want %q", modes, test.key)
+		}
+	}
+}
