@@ -20,10 +20,12 @@ func (p Player) Play(ctx context.Context, resolvedURL string) error {
 	arguments := append(append([]string(nil), p.Arguments...), resolvedURL)
 	cmd := exec.CommandContext(ctx, p.Executable, arguments...)
 	stdout, stderr := p.Stdout, p.Stderr
-	if p.Verbose != nil && !*p.Verbose {
+	quiet := p.Verbose != nil && !*p.Verbose
+	if quiet {
 		stdout, stderr = io.Discard, io.Discard
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.Stdin, stdout, stderr
+	configureProcess(cmd, quiet)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("player %q failed: %w", p.Executable, sanitizeExitError(err))
 	}
