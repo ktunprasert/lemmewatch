@@ -1204,13 +1204,15 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 					if key == "" {
 						key = modes[0].Key
 					}
+					matched := false
 					for _, mode := range modes {
 						if mode.Key == key {
 							context = plainLabel(mode.Value)
+							matched = true
 							break
 						}
 					}
-					if context == "" && key != modes[0].Key {
+					if !matched {
 						context = plainLabel(modes[0].Value)
 					}
 				}

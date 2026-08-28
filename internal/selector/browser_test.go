@@ -94,6 +94,15 @@ func TestInvalidPreferredModeFallsBackToDefault(t *testing.T) {
 	}
 }
 
+func TestValidEmptyModeDoesNotFallBackToDefault(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune", modes: []ContextMode{{Group: "media", Key: "y", Name: "Year", Value: "2021"}, {Group: "media", Key: "r", Name: "Rating", Value: ""}}})
+	m.mode = map[string]string{"media": "r"}
+	view := ansi.Strip(m.View())
+	if strings.Contains(view, "2021") {
+		t.Fatalf("empty rating fell back to year: %q", view)
+	}
+}
+
 func TestUnavailableItemUsesMutedStyleWithoutStrikethrough(t *testing.T) {
 	item := testChoice{label: "Future episode", unavailable: true}
 	if !item.Unavailable() || unavailableStyle.GetStrikethrough() {
