@@ -185,6 +185,41 @@ func TestEscapeClearsFilterBeforeNavigatingBack(t *testing.T) {
 	}
 }
 
+func TestPaneLayoutUsesSlidingResponsiveWindow(t *testing.T) {
+	panes := []visiblePane[testChoice]{{title: "Media"}, {title: "Seasons"}, {title: "Episodes", active: true}, {title: "Torrents"}}
+
+	visible, widths := paneLayout(120, panes)
+	if got := paneTitles(visible); got != "Seasons,Episodes,Torrents" || paneWidth(widths) != 120 {
+		t.Fatalf("three-pane layout = %q %#v", got, widths)
+	}
+
+	visible, widths = paneLayout(80, panes)
+	if got := paneTitles(visible); got != "Episodes,Torrents" || paneWidth(widths) != 80 || widths[1] <= widths[0] {
+		t.Fatalf("two-pane layout = %q %#v", got, widths)
+	}
+
+	visible, widths = paneLayout(60, panes)
+	if got := paneTitles(visible); got != "Episodes" || paneWidth(widths) != 60 {
+		t.Fatalf("one-pane layout = %q %#v", got, widths)
+	}
+}
+
+func paneTitles(panes []visiblePane[testChoice]) string {
+	titles := make([]string, len(panes))
+	for i, pane := range panes {
+		titles[i] = pane.title
+	}
+	return strings.Join(titles, ",")
+}
+
+func paneWidth(widths []int) int {
+	total := 0
+	for _, width := range widths {
+		total += width + 2
+	}
+	return total
+}
+
 func TestBrowserLoadsAndChoosesTerminal(t *testing.T) {
 	m := newBrowser(testChoice{label: "movie"})
 	m.load = func(_ context.Context, parent testChoice) ([]testChoice, error) {

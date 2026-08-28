@@ -66,6 +66,16 @@ type pane[T item] struct {
 	filter string
 }
 
+type visiblePane[T item] struct {
+	title   string
+	items   []indexed[T]
+	index   int
+	filter  string
+	active  bool
+	loading bool
+	err     error
+}
+
 type loaded[T item] struct {
 	items []T
 	err   error
@@ -769,6 +779,25 @@ func (m browserModel[T]) filteredCurrent() []indexed[T] {
 	return result
 }
 
+func (m browserModel[T]) filteredLevel(level int) []indexed[T] {
+	if level == len(m.levels)-1 {
+		return m.filteredCurrent()
+	}
+	current := m.levels[level]
+	items := filterItems(current.items, current.filter)
+	if level != 0 || len(m.options.ParentGroups) == 0 {
+		return items
+	}
+	group := m.options.ParentGroups[m.groupIndex]
+	result := items[:0]
+	for _, value := range items {
+		if grouped, ok := any(value.item).(groupedItem); ok && grouped.Group() == group {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
 func (m browserModel[T]) filteredRight() []indexed[T] {
 	items := filterItems(m.right.items, m.right.filter)
 	result := items[:0]
@@ -845,17 +874,16 @@ func (m browserModel[T]) View() string {
 	if height <= 0 {
 		height = 24
 	}
-	leftWidth := max(18, width/2-2)
-	rightWidth := max(18, width-leftWidth-3)
 	rows := max(1, height-6)
 	current := m.levels[len(m.levels)-1]
-	leftTitle := current.title
-	if len(m.levels) == 1 && len(m.options.ParentGroups) > 0 {
-		leftTitle = groupTabs(m.options.ParentGroups, m.groupIndex)
+	panes := make([]visiblePane[T], 0, len(m.levels)+1)
+	for i, level := range m.levels {
+		title := level.title
+		if i == 0 && len(m.options.ParentGroups) > 0 {
+			title = groupTabs(m.options.ParentGroups, m.groupIndex)
+		}
+		panes = append(panes, visiblePane[T]{title: title, items: m.filteredLevel(i), index: level.index, filter: level.filter, active: !m.focusRight && i == len(m.levels)-1})
 	}
-	leftItems := m.filteredCurrent()
-	left := renderBrowserPane(leftTitle, leftItems, current.index, leftWidth, rows, !m.focusRight, current.filter, false, nil, m.mode)
-	rightItems := m.filteredRight()
 	rightTitle := m.right.title
 	if m.rightHasStreams() {
 		cacheLabel := "Cached"
@@ -868,7 +896,14 @@ func (m browserModel[T]) View() string {
 		}
 		rightTitle = fmt.Sprintf("Torrents  [%s]  [%s]", cacheLabel, qualityLabel)
 	}
-	right := renderBrowserPane(rightTitle, rightItems, m.right.index, rightWidth, rows, m.focusRight, m.right.filter, m.loading, m.err, m.mode)
+	if rightTitle != "" || len(m.right.items) > 0 || m.loading || m.err != nil {
+		panes = append(panes, visiblePane[T]{title: rightTitle, items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading, err: m.err})
+	}
+	visible, widths := paneLayout(width, panes)
+	rendered := make([]string, len(visible))
+	for i, pane := range visible {
+		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode)
+	}
 	breadcrumb := m.breadcrumb()
 	helpText := "? keys  m mode  s sort  h/l focus  j/k move  enter open  / filter  q quit"
 	if m.options.Requery != nil {
@@ -886,7 +921,7 @@ func (m browserModel[T]) View() string {
 	if m.playing {
 		helpText = "PLAYING  x stop  |  " + helpText
 	}
-	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right) + "\n" + hintStyle.Render(helpText) + "\n"
+	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + hintStyle.Render(helpText) + "\n"
 	var modal string
 	switch {
 	case m.helpMenu:
@@ -912,6 +947,54 @@ func (m browserModel[T]) View() string {
 		view = toastOverlay(view, m.notice, width)
 	}
 	return "\x1b]0;" + plainLabel(breadcrumb) + "\x07" + view
+}
+
+func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []int) {
+	if len(panes) == 0 {
+		return nil, nil
+	}
+	count := min(3, len(panes))
+	if width < 64 {
+		count = 1
+	} else if width < 88 {
+		count = min(2, count)
+	}
+	if count == 1 {
+		active := len(panes) - 1
+		for i := range panes {
+			if panes[i].active {
+				active = i
+				break
+			}
+		}
+		return panes[active : active+1], []int{max(18, width-2)}
+	}
+	visible := panes[len(panes)-count:]
+	minimums := []int{24, 40}
+	weights := []int{1, 2}
+	if count == 3 {
+		minimums = []int{24, 24, 40}
+		weights = []int{1, 1, 2}
+	}
+	extra := max(0, width-sum(minimums))
+	weightTotal := sum(weights)
+	widths := make([]int, count)
+	used := 0
+	for i := range count {
+		share := extra * weights[i] / weightTotal
+		widths[i] = minimums[i] + share - 2
+		used += share
+	}
+	widths[count-1] += extra - used
+	return visible, widths
+}
+
+func sum(values []int) int {
+	total := 0
+	for _, value := range values {
+		total += value
+	}
+	return total
 }
 
 func (m browserModel[T]) breadcrumb() string {

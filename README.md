@@ -55,8 +55,11 @@ through TorBox and launch the configured player.
 For multi-file season packs, addon filename metadata selects the matching TorBox
 file before season/episode pattern matching or legacy index fallback.
 
-Interactive watch uses two panes: search results on the left and torrents on the
-right. `Tab` switches movie/series results. Enter loads or selects, `h`/`l`
+Interactive watch uses adaptive navigation panes. Wide terminals show up to
+three latest navigation panes at a `1:1:2`
+weight; medium terminals use `1:2`, and narrow terminals show the active pane.
+Older ancestors slide off the left while breadcrumbs retain their context.
+`Tab` switches movie/series results. Enter loads or selects, `h`/`l`
 changes focus, `j`/`k` moves, and `/` filters the active pane by name or quality.
 `Ctrl-D` and `Ctrl-U` move half a page. Breadcrumbs begin with the active
 Movie/Series group and are mirrored in the terminal title.
