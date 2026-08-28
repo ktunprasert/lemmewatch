@@ -66,7 +66,9 @@ Uncached playback is not implemented yet.
 Playback leaves the browser open. Press `s` to stop a directly managed player,
 or navigate back through episodes and titles while it runs. Native `open`,
 `xdg-open`, and Windows URL handoff cannot stop the external application.
-`lemmewatch history` lists up to 100 recently played top-level IMDb titles.
+`lemmewatch history` opens up to 100 recently played top-level IMDb titles in
+the browser. History starts as a single root pane without movie/series tabs;
+opening titles uses the same season, episode, torrent, and playback flow.
 Press `Ctrl-P` to run a new movie/series search without leaving the browser.
 Right/`l` opens the active left item when its child pane is not loaded; only `q`
 exits the browser.

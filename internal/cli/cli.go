@@ -14,7 +14,6 @@ import (
 	"lemmewatch/internal/app"
 	"lemmewatch/internal/buildinfo"
 	"lemmewatch/internal/catalog"
-	"lemmewatch/internal/config"
 	"lemmewatch/internal/httpx"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
@@ -42,20 +41,13 @@ func New() *cobra.Command {
 	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "show sanitized HTTP diagnostics")
 	root.Flags().StringVarP(&forcedQuery, "query", "q", "", "force bare query, including reserved command names")
-	root.AddCommand(watchCommand(a), searchCommand(a), streamsCommand(a), cacheCommand(a), playCommand(a), historyCommand())
+	root.AddCommand(watchCommand(a), searchCommand(a), streamsCommand(a), cacheCommand(a), playCommand(a), historyCommand(a))
 	return root
 }
 
-func historyCommand() *cobra.Command {
-	return &cobra.Command{Use: "history", Short: "List recently played titles", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		entries, err := config.History()
-		if err != nil {
-			return fmt.Errorf("read history: %w", err)
-		}
-		for _, entry := range entries {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", entry.ID, entry.Type, entry.PlayedAt.Format(time.RFC3339), entry.Title)
-		}
-		return nil
+func historyCommand(a app.App) *cobra.Command {
+	return &cobra.Command{Use: "history", Short: "Browse recently played titles", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		return a.History(cmd.Context())
 	}}
 }
 

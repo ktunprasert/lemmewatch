@@ -324,15 +324,19 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "Down / j", label: "Move down", key: tea.KeyMsg{Type: tea.KeyDown}},
 		{keys: "PgUp", label: "Previous page", key: tea.KeyMsg{Type: tea.KeyPgUp}},
 		{keys: "PgDown", label: "Next page", key: tea.KeyMsg{Type: tea.KeyPgDown}},
-		{keys: "Tab", label: "Toggle movie or series", key: tea.KeyMsg{Type: tea.KeyTab}},
 		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
-		{keys: "Ctrl-P", label: "Run new search", key: tea.KeyMsg{Type: tea.KeyCtrlP}},
 		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
 		{keys: "x", label: "Stop playback", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}},
 		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
 		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
 		{keys: "?", label: "Show keybindings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
 		{keys: "q", label: "Quit", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
+	}
+	if len(m.options.ParentGroups) > 1 {
+		bindings = append(bindings, helpBinding{keys: "Tab", label: "Toggle movie or series", key: tea.KeyMsg{Type: tea.KeyTab}})
+	}
+	if m.options.Requery != nil {
+		bindings = append(bindings, helpBinding{keys: "Ctrl-P", label: "Run new search", key: tea.KeyMsg{Type: tea.KeyCtrlP}})
 	}
 	query := strings.ToLower(strings.TrimSpace(m.helpFilter))
 	if query == "" {
@@ -719,7 +723,13 @@ func (m browserModel[T]) View() string {
 	if len(m.crumbs) > 0 {
 		breadcrumb += " / " + strings.Join(m.crumbs, " / ")
 	}
-	helpText := "? keys  tab movie/series  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
+	helpText := "? keys  s sort  h/l focus  j/k move  enter open  / filter  q quit"
+	if m.options.Requery != nil {
+		helpText = "? keys  s sort  h/l focus  j/k move  enter open  ctrl-p search  / filter  q quit"
+	}
+	if len(m.options.ParentGroups) > 1 {
+		helpText = "tab movie/series  " + helpText
+	}
 	if m.focusRight {
 		helpText = "h/l focus  j/k move  enter open/select  / filter  esc back"
 		if m.rightHasStreams() {
@@ -951,7 +961,7 @@ func nextQuality(current int) int {
 
 func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, items []T, load func(context.Context, T) ([]T, error), options BrowserOptions[T]) (T, error) {
 	var zero T
-	if len(items) == 0 {
+	if len(items) == 0 && options.Play == nil {
 		return zero, errors.New("no choices")
 	}
 	title := options.InitialTitle

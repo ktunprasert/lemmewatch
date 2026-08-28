@@ -33,6 +33,24 @@ func newBrowser(items ...testChoice) browserModel[testChoice] {
 	return browserModel[testChoice]{ctx: context.Background(), levels: []pane[testChoice]{{title: "Search", items: items}}, cachedOnly: true}
 }
 
+func TestHistoryRootOmitsSearchAndTabControls(t *testing.T) {
+	m := newBrowser(testChoice{label: "movie"})
+	m.levels[0].title = "History"
+	m.activeQuery = "History"
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "History") {
+		t.Fatalf("missing history title: %q", view)
+	}
+	if strings.Contains(view, "movie/series") || strings.Contains(view, "ctrl-p search") {
+		t.Fatalf("history exposed unavailable controls: %q", view)
+	}
+	for _, binding := range m.filteredHelpBindings() {
+		if binding.keys == "Tab" || binding.keys == "Ctrl-P" {
+			t.Fatalf("history exposed unavailable binding: %#v", binding)
+		}
+	}
+}
+
 func TestBrowserLoadsAndChoosesTerminal(t *testing.T) {
 	m := newBrowser(testChoice{label: "movie"})
 	m.load = func(_ context.Context, parent testChoice) ([]testChoice, error) {

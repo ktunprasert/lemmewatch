@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"lemmewatch/internal/catalog"
+	"lemmewatch/internal/config"
 	"lemmewatch/internal/model"
 )
 
@@ -44,5 +45,16 @@ func TestSearchPreservesCatalogRelevanceWithinMediaType(t *testing.T) {
 	}
 	if strings.Join(series, ",") != "Yellow,Beta" {
 		t.Fatalf("series order = %#v", series)
+	}
+}
+
+func TestHistoryMediaPreservesPlayableEntries(t *testing.T) {
+	items := historyMedia([]config.HistoryEntry{
+		{ID: "tt1", Title: "Movie", Type: "movie"},
+		{ID: "bad", Title: "Invalid", Type: "podcast"},
+		{ID: "tt2", Title: "Series", Type: "series"},
+	})
+	if len(items) != 2 || items[0].Name != "Movie" || items[1].Type != model.Series {
+		t.Fatalf("items = %#v", items)
 	}
 }
