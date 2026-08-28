@@ -22,8 +22,12 @@ description = "Cross-compile lemmewatch for Apple Silicon"
 run = """CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-X lemmewatch/internal/buildinfo.Commit=$(git describe --always --dirty)" -o dist/lemmewatch-darwin-arm64 ./cmd/lemmewatch"""
 
 [tasks.build-windows-amd64]
-description = "Cross-compile lemmewatch for Windows x64"
-run = """CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-X lemmewatch/internal/buildinfo.Commit=$(git describe --always --dirty)" -o dist/lemmewatch-windows-amd64.exe ./cmd/lemmewatch"""
+description = "Cross-compile Windows x64 app and Explorer launcher"
+run = '''
+mkdir -p dist
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-X lemmewatch/internal/buildinfo.Commit=$(git describe --always --dirty)" -o dist/lemmewatch.exe ./cmd/lemmewatch
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-H=windowsgui" -o dist/lemmewatch-launcher.exe ./cmd/launcher
+'''
 
 [tasks.check]
 description = "Format, vet, test, and build"
