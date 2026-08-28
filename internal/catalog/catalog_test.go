@@ -39,14 +39,14 @@ func TestEpisodesFiltersSpecials(t *testing.T) {
 		if r.URL.Path != "/meta/series/tt123.json" {
 			t.Errorf("path = %q", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"meta":{"videos":[{"id":"tt123:0:1","title":"Special","season":0,"episode":1},{"id":"tt123:1:1","title":"Pilot","season":1,"episode":1,"released":"2026-08-28T00:00:00Z"}]}}`))
+		_, _ = w.Write([]byte(`{"meta":{"videos":[{"id":"tt123:0:1","name":"Special","season":0,"episode":1},{"id":"tt123:1:1","name":"Pilot","season":1,"episode":1,"released":"2026-08-28T00:00:00Z"},{"id":"tt123:1:2","title":"Legacy Title","season":1,"episode":2}]}}`))
 	}))
 	defer server.Close()
 	episodes, err := (Client{BaseURL: server.URL, HTTP: server.Client()}).Episodes(context.Background(), "tt123")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(episodes) != 1 || episodes[0].ID != "tt123:1:1" || episodes[0].Title != "Pilot" {
+	if len(episodes) != 2 || episodes[0].ID != "tt123:1:1" || episodes[0].Title != "Pilot" || episodes[1].Title != "Legacy Title" {
 		t.Fatalf("episodes = %#v", episodes)
 	}
 	if got := episodes[0].Released.Format("2006-01-02"); got != "2026-08-28" {
