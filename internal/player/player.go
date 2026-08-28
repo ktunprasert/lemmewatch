@@ -13,12 +13,17 @@ type Player struct {
 	Stdin      io.Reader
 	Stdout     io.Writer
 	Stderr     io.Writer
+	Verbose    *bool
 }
 
 func (p Player) Play(ctx context.Context, resolvedURL string) error {
 	arguments := append(append([]string(nil), p.Arguments...), resolvedURL)
 	cmd := exec.CommandContext(ctx, p.Executable, arguments...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.Stdin, p.Stdout, p.Stderr
+	stdout, stderr := p.Stdout, p.Stderr
+	if p.Verbose != nil && !*p.Verbose {
+		stdout, stderr = io.Discard, io.Discard
+	}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.Stdin, stdout, stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("player %q failed: %w", p.Executable, sanitizeExitError(err))
 	}

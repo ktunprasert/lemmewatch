@@ -134,3 +134,14 @@ func TestConfiguredAppEnvironmentOverridesPreferredPlayer(t *testing.T) {
 		t.Fatalf("player = %q", got)
 	}
 }
+
+func TestDebugEnvironmentEnablesDiagnostics(t *testing.T) {
+	t.Setenv("DEBUG", "yes")
+	if !envEnabled("DEBUG") {
+		t.Fatal("DEBUG did not enable diagnostics")
+	}
+	t.Setenv("DEBUG", "0")
+	if envEnabled("DEBUG") {
+		t.Fatal("DEBUG=0 enabled diagnostics")
+	}
+}

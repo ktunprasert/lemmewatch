@@ -51,8 +51,9 @@ Bare queries matching command names resolve as commands. Use `-q`/`--query` to
 force search input, for example `lemmewatch -q history` or
 `lemmewatch -q one piece`.
 
-Add `--verbose` to show sanitized HTTP method, host/path, status, duration, and
-failure class. Query strings are omitted because TorBox URLs may contain tokens.
+Add `--verbose` or set `DEBUG=1` to show player output plus sanitized HTTP
+method, host/path, status, duration, and failure class. Player output is hidden
+by default. Query strings are omitted because TorBox URLs may contain tokens.
 
 Bare query and `watch` run movie and series flows. Series traversal adds season
 and episode panes before torrent selection. Selected cached streams resolve

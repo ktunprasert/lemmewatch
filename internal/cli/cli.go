@@ -23,7 +23,7 @@ import (
 )
 
 func New() *cobra.Command {
-	verbose := false
+	verbose := envEnabled("DEBUG")
 	forcedQuery := ""
 	a := configuredApp(&verbose)
 	root := &cobra.Command{
@@ -40,7 +40,7 @@ func New() *cobra.Command {
 		},
 	}
 	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
-	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "show sanitized HTTP diagnostics")
+	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", verbose, "show HTTP diagnostics and player output")
 	root.Flags().StringVarP(&forcedQuery, "query", "q", "", "force bare query, including reserved command names")
 	root.AddCommand(watchCommand(a), searchCommand(a), streamsCommand(a), cacheCommand(a), playCommand(a), historyCommand(a))
 	return root
@@ -60,7 +60,7 @@ func configuredApp(verbose *bool) app.App {
 	transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	torboxHTTP := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Base: transport, Verbose: verbose, Output: os.Stderr}}
 	playerName, playerArguments := defaultPlayer(runtime.GOOS)
-	defaultPlayerConfig := player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
+	defaultPlayerConfig := player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose}
 	preferences := config.Load()
 	if configured := env("LEMMEWATCH_PLAYER", preferences.Player); configured != "" {
 		playerName, playerArguments = configured, nil
@@ -69,7 +69,7 @@ func configuredApp(verbose *bool) app.App {
 		Catalog:          catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
 		Streams:          stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient},
 		TorBox:           torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: env("TORBOX_API_TOKEN", buildinfo.DefaultTorboxAPIToken), HTTP: torboxHTTP},
-		Player:           player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
+		Player:           player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose},
 		DefaultPlayer:    defaultPlayerConfig,
 		PlayerOverridden: os.Getenv("LEMMEWATCH_PLAYER") != "",
 		In:               os.Stdin, Out: os.Stdout, Err: os.Stderr,
@@ -152,6 +152,15 @@ func env(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envEnabled(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func defaultPlayer(goos string) (string, []string) {
