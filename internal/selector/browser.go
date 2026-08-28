@@ -1050,15 +1050,19 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 				}
 			}
 			available := max(1, contentWidth-2)
+			unavailable, isUnavailable := any(items[i].item).(unavailableItem)
 			if context != "" {
 				context = ansi.Truncate(context, max(1, available/2), "...")
 				label = ansi.Truncate(label, max(1, available-lipgloss.Width(context)-1), "...")
+				if isUnavailable && unavailable.Unavailable() {
+					label = unavailableStyle.Render(label)
+				}
 				label += strings.Repeat(" ", max(1, available-lipgloss.Width(label)-lipgloss.Width(context))) + hintStyle.Render(context)
 			} else {
 				label = ansi.Truncate(label, available, "...")
-			}
-			if unavailable, ok := any(items[i].item).(unavailableItem); ok && unavailable.Unavailable() {
-				label = unavailableStyle.Render(label)
+				if isUnavailable && unavailable.Unavailable() {
+					label = unavailableStyle.Render(label)
+				}
 			}
 			row := "  " + label
 			if i == selected {
