@@ -3,6 +3,7 @@ package selector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -122,6 +123,39 @@ func TestSwitchesBetweenHistoryAndSearchRoots(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	if m.levels[0].title != "Search results" || len(m.options.ParentGroups) != 2 || m.activeQuery != "Dune" {
 		t.Fatalf("search root = %#v", m)
+	}
+}
+
+func TestBreadcrumbIncludesMediaGroupAndSetsTerminalTitle(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune", group: "movie"})
+	m.options.ParentGroups = []string{"movie", "series"}
+	m.activeQuery = "Dune"
+	m.crumbs = []string{"Season 1"}
+	if got := m.breadcrumb(); got != "Movie / Dune / Season 1" {
+		t.Fatalf("breadcrumb = %q", got)
+	}
+	if view := m.View(); !strings.HasPrefix(view, "\x1b]0;Movie / Dune / Season 1\x07") {
+		t.Fatalf("terminal title missing: %q", view)
+	}
+}
+
+func TestCtrlDAndCtrlUMoveHalfPage(t *testing.T) {
+	items := make([]testChoice, 30)
+	for i := range items {
+		items[i].label = fmt.Sprintf("item %d", i)
+	}
+	m := newBrowser(items...)
+	m.height = 24
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	m = next.(browserModel[testChoice])
+	down := m.current().index
+	if down <= 0 {
+		t.Fatalf("ctrl-d index = %d", down)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m = next.(browserModel[testChoice])
+	if m.current().index != 0 {
+		t.Fatalf("ctrl-u index = %d", m.current().index)
 	}
 }
 

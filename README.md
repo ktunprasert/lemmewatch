@@ -58,6 +58,8 @@ file before season/episode pattern matching or legacy index fallback.
 Interactive watch uses two panes: search results on the left and torrents on the
 right. `Tab` switches movie/series results. Enter loads or selects, `h`/`l`
 changes focus, `j`/`k` moves, and `/` filters the active pane by name or quality.
+`Ctrl-D` and `Ctrl-U` move half a page. Breadcrumbs begin with the active
+Movie/Series group and are mirrored in the terminal title.
 While filtering, Ctrl-W clears a word and Ctrl-U clears the line. In the torrent
 pane, `c` toggles cached/all and `v` cycles quality; quality preference persists
 under the XDG config directory. The active Movie/Series tab persists there too.

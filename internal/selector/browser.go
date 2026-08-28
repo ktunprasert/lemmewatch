@@ -147,15 +147,17 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 	previousNotice := m.notice
 	defer func() {
 		updated, ok := result.(browserModel[T])
-		if !ok || updated.notice == "" || updated.notice == previousNotice {
+		if !ok {
 			return
 		}
-		updated.toastID++
-		id := updated.toastID
-		result = updated
-		if command == nil {
-			command = tea.Tick(4*time.Second, func(time.Time) tea.Msg { return toastExpired{id: id} })
+		if updated.notice != "" && updated.notice != previousNotice {
+			updated.toastID++
+			id := updated.toastID
+			if command == nil {
+				command = tea.Tick(4*time.Second, func(time.Time) tea.Msg { return toastExpired{id: id} })
+			}
 		}
+		result = updated
 	}()
 	switch msg := message.(type) {
 	case tea.WindowSizeMsg:
@@ -309,6 +311,10 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.move(-m.pageSize())
 		case "pgdown":
 			m.move(m.pageSize())
+		case "ctrl+d":
+			m.move(max(1, m.pageSize()/2))
+		case "ctrl+u":
+			m.move(-max(1, m.pageSize()/2))
 		case "enter":
 			return m.confirm()
 		}
@@ -411,6 +417,8 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "Down / j", label: "Move down", key: tea.KeyMsg{Type: tea.KeyDown}},
 		{keys: "PgUp", label: "Previous page", key: tea.KeyMsg{Type: tea.KeyPgUp}},
 		{keys: "PgDown", label: "Next page", key: tea.KeyMsg{Type: tea.KeyPgDown}},
+		{keys: "Ctrl-D", label: "Move half-page down", key: tea.KeyMsg{Type: tea.KeyCtrlD}},
+		{keys: "Ctrl-U", label: "Move half-page up", key: tea.KeyMsg{Type: tea.KeyCtrlU}},
 		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
 		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
 		{keys: "m", label: "Choose detail mode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}},
@@ -833,13 +841,7 @@ func (m browserModel[T]) View() string {
 		rightTitle = fmt.Sprintf("Torrents  [%s]  [%s]", cacheLabel, qualityLabel)
 	}
 	right := renderBrowserPane(rightTitle, rightItems, m.right.index, rightWidth, rows, m.focusRight, m.right.filter, m.loading, m.err, m.mode)
-	breadcrumb := m.activeQuery
-	if breadcrumb == "" {
-		breadcrumb = "Search"
-	}
-	if len(m.crumbs) > 0 {
-		breadcrumb += " / " + strings.Join(m.crumbs, " / ")
-	}
+	breadcrumb := m.breadcrumb()
 	helpText := "? keys  m mode  s sort  h/l focus  j/k move  enter open  / filter  q quit"
 	if m.options.Requery != nil {
 		helpText = "? keys  m mode  s sort  h/l focus  j/k move  enter open  ctrl-h history  ctrl-p search  / filter  q quit"
@@ -881,7 +883,24 @@ func (m browserModel[T]) View() string {
 	if m.notice != "" {
 		view = toastOverlay(view, m.notice, width)
 	}
-	return view
+	return "\x1b]0;" + plainLabel(breadcrumb) + "\x07" + view
+}
+
+func (m browserModel[T]) breadcrumb() string {
+	parts := make([]string, 0, len(m.crumbs)+2)
+	if len(m.options.ParentGroups) > 0 && m.groupIndex >= 0 && m.groupIndex < len(m.options.ParentGroups) {
+		group := m.options.ParentGroups[m.groupIndex]
+		if group != "" {
+			parts = append(parts, strings.ToUpper(group[:1])+group[1:])
+		}
+	}
+	if m.activeQuery != "" {
+		parts = append(parts, m.activeQuery)
+	} else if len(parts) == 0 {
+		parts = append(parts, "Search")
+	}
+	parts = append(parts, m.crumbs...)
+	return strings.Join(parts, " / ")
 }
 
 func sortModal(torrents bool) string {
