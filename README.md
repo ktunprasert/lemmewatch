@@ -78,6 +78,8 @@ the browser. History starts as a single root pane without movie/series tabs;
 opening titles uses the same season, episode, torrent, and playback flow.
 Press `Ctrl-H` from search or History to open the History root. Press `Ctrl-P`
 from either root to run a new movie/series search and restore its tabs.
+Episode torrent results are cached for the current browser session. Press `r`
+on an episode or its torrent pane to refresh provider and cache-status results.
 Right/`l` opens the active left item when its child pane is not loaded; only `q`
 exits the browser.
 
@@ -87,7 +89,7 @@ relevance. In the torrent pane, `s` offers quality, cache status, name, and
 default ranking sorts. `x` stops directly managed playback.
 
 Each list row uses a left-aligned name and right-aligned contextual detail.
-Press `m` for pane-specific modes: media year/ID/type, season episode count,
+Press `m` for pane-specific modes: media year/rating/ID/type, season episode count,
 episode air date/ID, and torrent quality/cache/size/seeders/source/filename.
 Year, quality, and cache sorting automatically select their matching mode.
 Episodes with future air dates use muted text to indicate that they may not be

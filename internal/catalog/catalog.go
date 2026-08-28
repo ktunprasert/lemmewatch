@@ -26,6 +26,7 @@ type response struct {
 		ReleaseInfo string `json:"releaseInfo"`
 		Poster      string `json:"poster"`
 		Description string `json:"description"`
+		Rating      string `json:"imdbRating"`
 	} `json:"metas"`
 }
 
@@ -67,7 +68,7 @@ func (c Client) Search(ctx context.Context, kind model.MediaType, query string) 
 	items := make([]model.Media, 0, len(payload.Metas))
 	for _, item := range payload.Metas {
 		year, _ := strconv.Atoi(item.ReleaseInfo)
-		items = append(items, model.Media{ID: item.ID, Type: model.MediaType(item.Type), Name: item.Name, Year: year, Poster: item.Poster, Summary: item.Description})
+		items = append(items, model.Media{ID: item.ID, Type: model.MediaType(item.Type), Name: item.Name, Year: year, Poster: item.Poster, Summary: item.Description, Rating: item.Rating})
 	}
 	return items, nil
 }

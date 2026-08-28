@@ -16,6 +16,7 @@ type Media struct {
 	Year    int
 	Poster  string
 	Summary string
+	Rating  string
 }
 
 type Stream struct {

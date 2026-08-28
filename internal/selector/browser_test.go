@@ -20,10 +20,12 @@ type testChoice struct {
 	year        int
 	modes       []ContextMode
 	unavailable bool
+	cacheKey    string
 }
 
 func (c testChoice) ContextModes() []ContextMode { return c.modes }
 func (c testChoice) Unavailable() bool           { return c.unavailable }
+func (c testChoice) CacheKey() string            { return c.cacheKey }
 
 func (c testChoice) Label() string  { return c.label }
 func (c testChoice) Group() string  { return c.group }
@@ -201,6 +203,37 @@ func TestPaneLayoutUsesSlidingResponsiveWindow(t *testing.T) {
 	visible, widths = paneLayout(60, panes)
 	if got := paneTitles(visible); got != "Episodes" || paneWidth(widths) != 60 {
 		t.Fatalf("one-pane layout = %q %#v", got, widths)
+	}
+}
+
+func TestEpisodeChildrenUseCacheUntilRefresh(t *testing.T) {
+	m := newBrowser(testChoice{label: "episode", cacheKey: "torrents:episode"})
+	loads := 0
+	m.load = func(context.Context, testChoice) ([]testChoice, error) {
+		loads++
+		return []testChoice{{label: fmt.Sprintf("torrent %d", loads), terminal: true}}, nil
+	}
+
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	m.focusRight = false
+	next, command = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if command != nil || loads != 1 || m.right.items[0].label != "torrent 1" {
+		t.Fatalf("cache miss: loads=%d command=%v right=%#v", loads, command, m.right.items)
+	}
+
+	next, command = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = next.(browserModel[testChoice])
+	if command == nil {
+		t.Fatal("refresh did not reload")
+	}
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if loads != 2 || m.right.items[0].label != "torrent 2" {
+		t.Fatalf("refresh result: loads=%d right=%#v", loads, m.right.items)
 	}
 }
 

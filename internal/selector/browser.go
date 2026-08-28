@@ -79,6 +79,7 @@ type visiblePane[T item] struct {
 type loaded[T item] struct {
 	items []T
 	err   error
+	key   string
 }
 
 type playFinished struct{ err error }
@@ -106,6 +107,7 @@ type contextualItem interface {
 	ContextModes() []ContextMode
 }
 type unavailableItem interface{ Unavailable() bool }
+type cacheableItem interface{ CacheKey() string }
 
 type toastExpired struct{ id uint64 }
 
@@ -143,6 +145,7 @@ type browserModel[T item] struct {
 	choice      T
 	playing     bool
 	stopPlaying context.CancelFunc
+	loadCache   map[string][]T
 }
 
 var (
@@ -180,6 +183,12 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.right.items = msg.items
 		m.right.index = 0
 		m.right.filter = ""
+		if msg.err == nil && msg.key != "" {
+			if m.loadCache == nil {
+				m.loadCache = make(map[string][]T)
+			}
+			m.loadCache[msg.key] = msg.items
+		}
 		if msg.err == nil && len(msg.items) > 0 {
 			m.focusRight = true
 		} else if msg.err != nil {
@@ -264,6 +273,16 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.pendingG = true
 		case "G":
 			m.move(1 << 30)
+		case "r":
+			if !m.loading {
+				items := m.filteredCurrent()
+				if len(items) > 0 {
+					selected := items[m.current().index].item
+					if cacheable, ok := any(selected).(cacheableItem); ok && cacheable.CacheKey() != "" {
+						return m.loadSelected(selected, true)
+					}
+				}
+			}
 		case "s":
 			if (!m.focusRight && len(m.levels) == 1) || (m.focusRight && m.rightHasStreams()) {
 				m.sortMenu = true
@@ -457,6 +476,7 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "Ctrl-U", label: "Move half-page up", key: tea.KeyMsg{Type: tea.KeyCtrlU}},
 		{keys: "gg", label: "Move to first item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g', 'g'}}},
 		{keys: "G", label: "Move to last item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}},
+		{keys: "r", label: "Refresh episode torrents", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}},
 		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
 		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
 		{keys: "m", label: "Choose detail mode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}},
@@ -668,13 +688,29 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 	}
 	selected := items[m.current().index].item
 	m.crumbs = append(m.crumbs[:len(m.levels)-1], plainLabel(selected.Label()))
+	return m.loadSelected(selected, false)
+}
+
+func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.Cmd) {
+	key := ""
+	if cacheable, ok := any(selected).(cacheableItem); ok {
+		key = cacheable.CacheKey()
+	}
 	m.right = pane[T]{title: m.childTitle(selected)}
-	m.loading = true
 	m.err = nil
 	m.notice = ""
+	if !refresh && key != "" {
+		if cached, ok := m.loadCache[key]; ok {
+			m.right.items = cached
+			m.focusRight = len(cached) > 0
+			m.loading = false
+			return m, nil
+		}
+	}
+	m.loading = true
 	return m, func() tea.Msg {
 		items, err := m.load(m.ctx, selected)
-		return loaded[T]{items: items, err: err}
+		return loaded[T]{items: items, err: err, key: key}
 	}
 }
 

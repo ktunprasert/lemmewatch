@@ -13,14 +13,14 @@ func TestSearch(t *testing.T) {
 		if !strings.Contains(r.URL.Path, "/catalog/movie/top/search=Dune.json") {
 			t.Errorf("path = %q", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"metas":[{"id":"tt1160419","type":"movie","name":"Dune","releaseInfo":"2021"}]}`))
+		_, _ = w.Write([]byte(`{"metas":[{"id":"tt1160419","type":"movie","name":"Dune","releaseInfo":"2021","imdbRating":"8.0"}]}`))
 	}))
 	defer server.Close()
 	items, err := (Client{BaseURL: server.URL, HTTP: server.Client()}).Search(context.Background(), "movie", "Dune")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].ID != "tt1160419" || items[0].Year != 2021 {
+	if len(items) != 1 || items[0].ID != "tt1160419" || items[0].Year != 2021 || items[0].Rating != "8.0" {
 		t.Fatalf("items = %#v", items)
 	}
 }

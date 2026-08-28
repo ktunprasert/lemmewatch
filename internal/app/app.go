@@ -68,7 +68,7 @@ func (n navigationChoice) ContextModes() []selector.ContextMode {
 		if n.media.Year > 0 {
 			year = strconv.Itoa(n.media.Year)
 		}
-		return []selector.ContextMode{{Group: "media", Key: "y", Name: "Year", Value: year}, {Group: "media", Key: "i", Name: "ID", Value: n.media.ID}, {Group: "media", Key: "t", Name: "Type", Value: string(n.media.Type)}}
+		return []selector.ContextMode{{Group: "media", Key: "y", Name: "Year", Value: year}, {Group: "media", Key: "r", Name: "Rating", Value: n.media.Rating}, {Group: "media", Key: "i", Name: "ID", Value: n.media.ID}, {Group: "media", Key: "t", Name: "Type", Value: string(n.media.Type)}}
 	case navigationSeason:
 		return []selector.ContextMode{{Group: "season", Key: "e", Name: "Episodes", Value: fmt.Sprintf("%d episodes", len(n.episodes))}}
 	case navigationEpisode:
@@ -111,6 +111,12 @@ func (n navigationChoice) Group() string {
 func (n navigationChoice) Terminal() bool { return n.kind == navigationStream }
 func (n navigationChoice) Unavailable() bool {
 	return n.kind == navigationEpisode && !n.episode.Released.IsZero() && n.episode.Released.After(time.Now())
+}
+func (n navigationChoice) CacheKey() string {
+	if n.kind == navigationEpisode {
+		return "torrents:" + n.episode.ID
+	}
+	return ""
 }
 func (n navigationChoice) StreamInfo() (bool, int, bool) {
 	return n.stream.Cached, n.stream.Quality, n.kind == navigationStream
