@@ -9,7 +9,7 @@ import (
 func TestPreferencesRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
-	if err := Save(Preferences{Quality: 1080, MediaTab: "series"}); err != nil {
+	if err := Save(Preferences{Quality: 1080, MediaTab: "series", DetailModes: map[string]string{"media": "i"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := Load().Quality; got != 1080 {
@@ -17,6 +17,9 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	}
 	if got := Load().MediaTab; got != "series" {
 		t.Fatalf("media tab = %q", got)
+	}
+	if got := Load().DetailModes["media"]; got != "i" {
+		t.Fatalf("media detail mode = %q", got)
 	}
 	info, err := os.Stat(filepath.Join(root, "lemmewatch", "preferences.json"))
 	if err != nil {
@@ -37,7 +40,7 @@ func TestLoadIgnoresInvalidPreferences(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "preferences.json"), []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := Load(); got != (Preferences{}) {
+	if got := Load(); got.Quality != 0 || got.MediaTab != "" || len(got.DetailModes) != 0 {
 		t.Fatalf("preferences = %#v", got)
 	}
 }

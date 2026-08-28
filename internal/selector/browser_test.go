@@ -69,6 +69,26 @@ func TestModePopupSelectsContextualRightColumn(t *testing.T) {
 	}
 }
 
+func TestModeSelectionPersistsPreference(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune", modes: []ContextMode{{Group: "media", Key: "y", Name: "Year", Value: "2021"}, {Group: "media", Key: "i", Name: "ID", Value: "tt1160419"}}})
+	var group, key string
+	m.options.SaveMode = func(savedGroup, savedKey string) error { group, key = savedGroup, savedKey; return nil }
+	m.modeMenu = true
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = next.(browserModel[testChoice])
+	if group != "media" || key != "i" || m.mode["media"] != "i" {
+		t.Fatalf("saved mode = %q/%q, state = %#v", group, key, m.mode)
+	}
+}
+
+func TestInvalidPreferredModeFallsBackToDefault(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune", modes: []ContextMode{{Group: "media", Key: "y", Name: "Year", Value: "2021"}}})
+	m.mode = map[string]string{"media": "removed"}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "2021") {
+		t.Fatalf("default mode missing: %q", view)
+	}
+}
+
 func TestBrowserLoadsAndChoosesTerminal(t *testing.T) {
 	m := newBrowser(testChoice{label: "movie"})
 	m.load = func(_ context.Context, parent testChoice) ([]testChoice, error) {

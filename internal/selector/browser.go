@@ -20,8 +20,10 @@ type BrowserOptions[T item] struct {
 	ParentGroups     []string
 	PreferredGroup   string
 	PreferredQuality int
+	PreferredModes   map[string]string
 	SaveGroup        func(string) error
 	SaveQuality      func(int) error
+	SaveMode         func(string, string) error
 	ChildTitle       func(T) string
 	Play             func(context.Context, T) error
 	Requery          func(context.Context, string) ([]T, error)
@@ -81,7 +83,7 @@ type helpBinding struct {
 }
 
 type ContextMode struct {
-	Key, Name, Value string
+	Group, Key, Name, Value string
 }
 
 type contextualItem interface {
@@ -312,10 +314,7 @@ func (m browserModel[T]) updateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	modes := m.contextModes()
 	for _, mode := range modes {
 		if msg.String() == mode.Key {
-			if m.mode == nil {
-				m.mode = make(map[string]string)
-			}
-			m.mode[modes[0].Name] = mode.Key
+			m.setContextMode(mode.Key)
 			return m, nil
 		}
 	}
@@ -477,7 +476,16 @@ func (m *browserModel[T]) setContextMode(key string) {
 	if m.mode == nil {
 		m.mode = make(map[string]string)
 	}
-	m.mode[modes[0].Name] = key
+	group := modes[0].Group
+	if group == "" {
+		group = modes[0].Name
+	}
+	m.mode[group] = key
+	if m.options.SaveMode != nil {
+		if err := m.options.SaveMode(group, key); err != nil {
+			m.notice = "Could not save detail mode preference"
+		}
+	}
 }
 
 func (m *browserModel[T]) back() {
@@ -992,7 +1000,11 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 			if contextual, ok := any(items[i].item).(contextualItem); ok {
 				modes := contextual.ContextModes()
 				if len(modes) > 0 {
-					key := selectedModes[modes[0].Name]
+					group := modes[0].Group
+					if group == "" {
+						group = modes[0].Name
+					}
+					key := selectedModes[group]
 					if key == "" {
 						key = modes[0].Key
 					}
@@ -1001,6 +1013,9 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 							context = plainLabel(mode.Value)
 							break
 						}
+					}
+					if context == "" && key != modes[0].Key {
+						context = plainLabel(modes[0].Value)
 					}
 				}
 			}
@@ -1074,7 +1089,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 		title = "Search results"
 	}
 	groupIndex := preferredGroupIndex(options.ParentGroups, options.PreferredGroup)
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: true, quality: options.PreferredQuality, activeQuery: options.InitialQuery, width: 100, height: 24}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: true, quality: options.PreferredQuality, mode: options.PreferredModes, activeQuery: options.InitialQuery, width: 100, height: 24}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

@@ -68,15 +68,15 @@ func (n navigationChoice) ContextModes() []selector.ContextMode {
 		if n.media.Year > 0 {
 			year = strconv.Itoa(n.media.Year)
 		}
-		return []selector.ContextMode{{Key: "y", Name: "Year", Value: year}, {Key: "i", Name: "ID", Value: n.media.ID}, {Key: "t", Name: "Type", Value: string(n.media.Type)}}
+		return []selector.ContextMode{{Group: "media", Key: "y", Name: "Year", Value: year}, {Group: "media", Key: "i", Name: "ID", Value: n.media.ID}, {Group: "media", Key: "t", Name: "Type", Value: string(n.media.Type)}}
 	case navigationSeason:
-		return []selector.ContextMode{{Key: "e", Name: "Episodes", Value: fmt.Sprintf("%d episodes", len(n.episodes))}}
+		return []selector.ContextMode{{Group: "season", Key: "e", Name: "Episodes", Value: fmt.Sprintf("%d episodes", len(n.episodes))}}
 	case navigationEpisode:
 		date := ""
 		if !n.episode.Released.IsZero() {
 			date = n.episode.Released.Format("2006-01-02")
 		}
-		return []selector.ContextMode{{Key: "a", Name: "Air date", Value: date}, {Key: "i", Name: "ID", Value: n.episode.ID}}
+		return []selector.ContextMode{{Group: "episode", Key: "a", Name: "Air date", Value: date}, {Group: "episode", Key: "i", Name: "ID", Value: n.episode.ID}}
 	case navigationStream:
 		quality := ""
 		if n.stream.Quality > 0 {
@@ -87,9 +87,9 @@ func (n navigationChoice) ContextModes() []selector.ContextMode {
 			cached = "cached"
 		}
 		return []selector.ContextMode{
-			{Key: "q", Name: "Quality", Value: quality}, {Key: "c", Name: "Cached", Value: cached},
-			{Key: "z", Name: "Size", Value: formatSize(n.stream.Size)}, {Key: "s", Name: "Seeders", Value: strconv.Itoa(n.stream.Seeders)},
-			{Key: "o", Name: "Source", Value: n.stream.Source}, {Key: "f", Name: "Filename", Value: n.stream.Filename},
+			{Group: "stream", Key: "q", Name: "Quality", Value: quality}, {Group: "stream", Key: "c", Name: "Cached", Value: cached},
+			{Group: "stream", Key: "z", Name: "Size", Value: formatSize(n.stream.Size)}, {Group: "stream", Key: "s", Name: "Seeders", Value: strconv.Itoa(n.stream.Seeders)},
+			{Group: "stream", Key: "o", Name: "Source", Value: n.stream.Source}, {Group: "stream", Key: "f", Name: "Filename", Value: n.stream.Filename},
 		}
 	}
 	return nil
@@ -282,6 +282,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		ParentGroups:     parentGroups,
 		PreferredGroup:   preferences.MediaTab,
 		PreferredQuality: preferences.Quality,
+		PreferredModes:   preferences.DetailModes,
 		ChildTitle: func(selected navigationChoice) string {
 			switch selected.kind {
 			case navigationMedia:
@@ -301,6 +302,13 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		},
 		SaveQuality: func(quality int) error {
 			preferences.Quality = quality
+			return config.Save(preferences)
+		},
+		SaveMode: func(group, mode string) error {
+			if preferences.DetailModes == nil {
+				preferences.DetailModes = make(map[string]string)
+			}
+			preferences.DetailModes[group] = mode
 			return config.Save(preferences)
 		},
 		Play: func(playContext context.Context, selected navigationChoice) error {
