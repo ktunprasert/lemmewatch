@@ -19,16 +19,29 @@ import (
 )
 
 type App struct {
-	Catalog catalog.Client
-	Streams stremio.Client
-	TorBox  torbox.Client
-	Player  player.Player
-	In      io.Reader
-	Out     io.Writer
-	Err     io.Writer
+	Catalog          catalog.Client
+	Streams          stremio.Client
+	TorBox           torbox.Client
+	Player           player.Player
+	DefaultPlayer    player.Player
+	PlayerOverridden bool
+	In               io.Reader
+	Out              io.Writer
+	Err              io.Writer
 }
 
 type navigationKind int
+
+func applyPlayerPreference(active *player.Player, fallback player.Player, overridden bool, preference string) {
+	if overridden {
+		return
+	}
+	*active = fallback
+	if preference != "" {
+		active.Executable = preference
+		active.Arguments = nil
+	}
+}
 
 const (
 	navigationMedia navigationKind = iota
@@ -333,7 +346,11 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		},
 		SavePlayer: func(player string) error {
 			preferences.Player = player
-			return config.Save(preferences)
+			if err := config.Save(preferences); err != nil {
+				return err
+			}
+			applyPlayerPreference(&a.Player, a.DefaultPlayer, a.PlayerOverridden, player)
+			return nil
 		},
 		SaveMode: func(group, mode string) error {
 			if preferences.DetailModes == nil {

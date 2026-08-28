@@ -12,6 +12,7 @@ import (
 	"lemmewatch/internal/catalog"
 	"lemmewatch/internal/config"
 	"lemmewatch/internal/model"
+	"lemmewatch/internal/player"
 )
 
 func TestSearchPreservesCatalogRelevanceWithinMediaType(t *testing.T) {
@@ -83,5 +84,26 @@ func TestNavigationDetailModeDefaults(t *testing.T) {
 		if len(modes) == 0 || modes[0].Key != test.key {
 			t.Fatalf("default mode = %#v, want %q", modes, test.key)
 		}
+	}
+}
+
+func TestApplyPlayerPreferenceImmediately(t *testing.T) {
+	fallback := player.Player{Executable: "xdg-open", Arguments: []string{"--default"}}
+	active := fallback
+	applyPlayerPreference(&active, fallback, false, "vlc")
+	if active.Executable != "vlc" || len(active.Arguments) != 0 {
+		t.Fatalf("custom player = %#v", active)
+	}
+	applyPlayerPreference(&active, fallback, false, "")
+	if active.Executable != "xdg-open" || len(active.Arguments) != 1 {
+		t.Fatalf("restored player = %#v", active)
+	}
+}
+
+func TestApplyPlayerPreferenceRespectsEnvironmentOverride(t *testing.T) {
+	active := player.Player{Executable: "environment-player"}
+	applyPlayerPreference(&active, player.Player{Executable: "xdg-open"}, true, "vlc")
+	if active.Executable != "environment-player" {
+		t.Fatalf("player = %#v", active)
 	}
 }
