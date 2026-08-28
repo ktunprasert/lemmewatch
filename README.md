@@ -35,6 +35,12 @@ type, quality, cached-only filtering, player, and pane detail modes. Enter on
 Player accepts a custom executable. `LEMMEWATCH_PLAYER` takes precedence over
 the saved player preference.
 
+Player settings may include arguments, for example `mpv.exe --no-border` or
+`"C:\\Program Files\\mpv\\mpv.exe" --no-border`. Commands are parsed into
+structured arguments and never run through a shell. Failures are appended to
+`$XDG_STATE_HOME/lemmewatch/errors.log` (normally
+`~/.local/state/lemmewatch/errors.log`) with URLs redacted.
+
 ## Usage
 
 ```text
@@ -127,3 +133,10 @@ Builds embed `git describe --always --dirty`. Verify an artifact with:
 ```sh
 lemmewatch --version
 ```
+
+The Windows build produces `lemmewatch.exe` and
+`lemmewatch-launcher.exe`. Run `lemmewatch.exe` directly from a terminal or
+place it on `PATH`. Explorer and shortcut users can open the sibling GUI
+launcher, which creates `lemmewatch.exe` in a new console hosted by the user's
+configured Windows default terminal. No shell or terminal executable is
+hardcoded.
