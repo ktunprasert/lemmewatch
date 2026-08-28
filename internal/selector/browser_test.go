@@ -91,10 +91,10 @@ func TestInvalidPreferredModeFallsBackToDefault(t *testing.T) {
 	}
 }
 
-func TestUnavailableItemUsesStrikethroughStyle(t *testing.T) {
+func TestUnavailableItemUsesMutedStyleWithoutStrikethrough(t *testing.T) {
 	item := testChoice{label: "Future episode", unavailable: true}
-	if !item.Unavailable() || !unavailableStyle.GetStrikethrough() {
-		t.Fatal("unavailable item is not marked with strikethrough styling")
+	if !item.Unavailable() || unavailableStyle.GetStrikethrough() {
+		t.Fatal("unavailable item styling is incorrect")
 	}
 }
 

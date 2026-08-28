@@ -83,8 +83,8 @@ Each list row uses a left-aligned name and right-aligned contextual detail.
 Press `m` for pane-specific modes: media year/ID/type, season episode count,
 episode air date/ID, and torrent quality/cache/size/seeders/source/filename.
 Year, quality, and cache sorting automatically select their matching mode.
-Episodes with future air dates use muted strikethrough rows to indicate that
-they may not be available yet.
+Episodes with future air dates use muted text to indicate that they may not be
+available yet.
 Filter, search, sort, and help use modal overlays. Press `?` for a searchable
 keybinding palette; type to filter commands and press Enter to run the selected
 binding.
