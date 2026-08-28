@@ -39,3 +39,31 @@ func TestPlaySuppressesOutputUnlessVerbose(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCommandSupportsQuotedArguments(t *testing.T) {
+	executable, arguments, err := ParseCommand(`"C:\Program Files\mpv\mpv.exe" --no-border --title "My Player"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executable != `C:\Program Files\mpv\mpv.exe` || strings.Join(arguments, "|") != "--no-border|--title|My Player" {
+		t.Fatalf("command = %q %#v", executable, arguments)
+	}
+}
+
+func TestParseCommandPreservesUNCPath(t *testing.T) {
+	executable, _, err := ParseCommand(`"\\server\share\mpv.exe" --fullscreen`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executable != `\\server\share\mpv.exe` {
+		t.Fatalf("executable = %q", executable)
+	}
+}
+
+func TestParseCommandRejectsMalformedInput(t *testing.T) {
+	for _, command := range []string{"", `mpv --title "unfinished`} {
+		if _, _, err := ParseCommand(command); err == nil {
+			t.Fatalf("ParseCommand(%q) succeeded", command)
+		}
+	}
+}

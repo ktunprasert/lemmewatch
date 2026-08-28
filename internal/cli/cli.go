@@ -61,15 +61,19 @@ func configuredApp(verbose *bool) app.App {
 	torboxHTTP := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Base: transport, Verbose: verbose, Output: os.Stderr}}
 	playerName, playerArguments := defaultPlayer(runtime.GOOS)
 	defaultPlayerConfig := player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose}
+	var playerConfigError error
 	preferences := config.Load()
 	if configured := env("LEMMEWATCH_PLAYER", preferences.Player); configured != "" {
-		playerName, playerArguments = configured, nil
+		playerName, playerArguments, playerConfigError = player.ParseCommand(configured)
+		if playerConfigError != nil {
+			playerName, playerArguments = configured, nil
+		}
 	}
 	return app.App{
 		Catalog:          catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
 		Streams:          stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient},
 		TorBox:           torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: env("TORBOX_API_TOKEN", buildinfo.DefaultTorboxAPIToken), HTTP: torboxHTTP},
-		Player:           player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose},
+		Player:           player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose, ConfigError: playerConfigError},
 		DefaultPlayer:    defaultPlayerConfig,
 		PlayerOverridden: os.Getenv("LEMMEWATCH_PLAYER") != "",
 		In:               os.Stdin, Out: os.Stdout, Err: os.Stderr,

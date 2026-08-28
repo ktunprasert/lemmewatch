@@ -32,15 +32,21 @@ type App struct {
 
 type navigationKind int
 
-func applyPlayerPreference(active *player.Player, fallback player.Player, overridden bool, preference string) {
+func applyPlayerPreference(active *player.Player, fallback player.Player, overridden bool, preference string) error {
+	executable, arguments, err := player.ParseCommand(preference)
+	if preference == "" {
+		executable, arguments, err = fallback.Executable, fallback.Arguments, nil
+	}
+	if err != nil {
+		return err
+	}
 	if overridden {
-		return
+		return nil
 	}
 	*active = fallback
-	if preference != "" {
-		active.Executable = preference
-		active.Arguments = nil
-	}
+	active.Executable = executable
+	active.Arguments = append([]string(nil), arguments...)
+	return nil
 }
 
 const (
@@ -345,11 +351,16 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			return config.Save(preferences)
 		},
 		SavePlayer: func(player string) error {
+			nextPlayer := a.Player
+			if err := applyPlayerPreference(&nextPlayer, a.DefaultPlayer, a.PlayerOverridden, player); err != nil {
+				_ = config.LogFailure("player preference", err)
+				return err
+			}
 			preferences.Player = player
 			if err := config.Save(preferences); err != nil {
 				return err
 			}
-			applyPlayerPreference(&a.Player, a.DefaultPlayer, a.PlayerOverridden, player)
+			a.Player = nextPlayer
 			return nil
 		},
 		SaveMode: func(group, mode string) error {
@@ -371,6 +382,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 				if playContext.Err() != nil {
 					return playContext.Err()
 				}
+				_ = config.LogFailure("player", err)
 				return err
 			}
 			return nil

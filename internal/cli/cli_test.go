@@ -116,11 +116,12 @@ func TestConfiguredAppPrefersEnvironmentTorboxToken(t *testing.T) {
 func TestConfiguredAppUsesPreferredPlayer(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("LEMMEWATCH_PLAYER", "")
-	if err := config.Save(config.Preferences{Player: "vlc"}); err != nil {
+	if err := config.Save(config.Preferences{Player: "vlc --no-video-title-show"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := configuredApp(new(bool)).Player.Executable; got != "vlc" {
-		t.Fatalf("player = %q", got)
+	got := configuredApp(new(bool)).Player
+	if got.Executable != "vlc" || len(got.Arguments) != 1 || got.Arguments[0] != "--no-video-title-show" {
+		t.Fatalf("player = %#v", got)
 	}
 }
 
