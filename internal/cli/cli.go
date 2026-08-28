@@ -24,11 +24,15 @@ import (
 
 func New() *cobra.Command {
 	verbose := false
+	forcedQuery := ""
 	a := configuredApp(&verbose)
 	root := &cobra.Command{
 		Use: "lemmewatch [QUERY...]", Short: "Find and stream media", Version: buildinfo.Commit, SilenceUsage: true, SilenceErrors: true,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if forcedQuery != "" {
+				return a.Watch(cmd.Context(), forcedQueryText(forcedQuery, args))
+			}
 			if len(args) == 0 {
 				return cmd.Help()
 			}
@@ -37,6 +41,7 @@ func New() *cobra.Command {
 	}
 	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "show sanitized HTTP diagnostics")
+	root.Flags().StringVarP(&forcedQuery, "query", "q", "", "force bare query, including reserved command names")
 	root.AddCommand(watchCommand(a), searchCommand(a), streamsCommand(a), cacheCommand(a), playCommand(a), historyCommand())
 	return root
 }
@@ -166,4 +171,8 @@ func defaultPlayer(goos string) (string, []string) {
 }
 func oneLine(value string) string {
 	return strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(value)
+}
+
+func forcedQueryText(first string, rest []string) string {
+	return strings.Join(append([]string{first}, rest...), " ")
 }

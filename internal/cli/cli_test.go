@@ -48,6 +48,26 @@ func TestVersionShowsBuildCommit(t *testing.T) {
 	}
 }
 
+func TestQueryFlagTreatsCommandNameAsFlagValue(t *testing.T) {
+	cmd := New()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--query", "history", "--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Find and stream media") || strings.Contains(out.String(), "List recently played titles\n\nUsage:") {
+		t.Fatalf("query flag resolved to subcommand help: %q", out.String())
+	}
+}
+
+func TestQueryFlagPreservesAdditionalWords(t *testing.T) {
+	if got := forcedQueryText("Dune", []string{"Part", "Two"}); got != "Dune Part Two" {
+		t.Fatalf("query = %q", got)
+	}
+}
+
 func TestDefaultPlayerUsesPlatformOpener(t *testing.T) {
 	tests := map[string]struct {
 		executable string
