@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"lemmewatch/internal/catalog"
 	"lemmewatch/internal/config"
@@ -56,5 +57,13 @@ func TestHistoryMediaPreservesPlayableEntries(t *testing.T) {
 	})
 	if len(items) != 2 || items[0].Name != "Movie" || items[1].Type != model.Series {
 		t.Fatalf("items = %#v", items)
+	}
+}
+
+func TestFutureEpisodeIsUnavailable(t *testing.T) {
+	future := navigationChoice{kind: navigationEpisode, episode: model.Episode{Released: time.Now().Add(time.Hour)}}
+	past := navigationChoice{kind: navigationEpisode, episode: model.Episode{Released: time.Now().Add(-time.Hour)}}
+	if !future.Unavailable() || past.Unavailable() {
+		t.Fatalf("availability: future=%t past=%t", future.Unavailable(), past.Unavailable())
 	}
 }

@@ -109,6 +109,9 @@ func (n navigationChoice) Group() string {
 	return ""
 }
 func (n navigationChoice) Terminal() bool { return n.kind == navigationStream }
+func (n navigationChoice) Unavailable() bool {
+	return n.kind == navigationEpisode && !n.episode.Released.IsZero() && n.episode.Released.After(time.Now())
+}
 func (n navigationChoice) StreamInfo() (bool, int, bool) {
 	return n.stream.Cached, n.stream.Quality, n.kind == navigationStream
 }

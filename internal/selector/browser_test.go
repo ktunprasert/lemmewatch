@@ -11,16 +11,18 @@ import (
 )
 
 type testChoice struct {
-	label    string
-	group    string
-	terminal bool
-	cached   bool
-	quality  int
-	year     int
-	modes    []ContextMode
+	label       string
+	group       string
+	terminal    bool
+	cached      bool
+	quality     int
+	year        int
+	modes       []ContextMode
+	unavailable bool
 }
 
 func (c testChoice) ContextModes() []ContextMode { return c.modes }
+func (c testChoice) Unavailable() bool           { return c.unavailable }
 
 func (c testChoice) Label() string  { return c.label }
 func (c testChoice) Group() string  { return c.group }
@@ -86,6 +88,13 @@ func TestInvalidPreferredModeFallsBackToDefault(t *testing.T) {
 	m.mode = map[string]string{"media": "removed"}
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "2021") {
 		t.Fatalf("default mode missing: %q", view)
+	}
+}
+
+func TestUnavailableItemUsesStrikethroughStyle(t *testing.T) {
+	item := testChoice{label: "Future episode", unavailable: true}
+	if !item.Unavailable() || !unavailableStyle.GetStrikethrough() {
+		t.Fatal("unavailable item is not marked with strikethrough styling")
 	}
 }
 

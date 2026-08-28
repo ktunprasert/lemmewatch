@@ -89,6 +89,7 @@ type ContextMode struct {
 type contextualItem interface {
 	ContextModes() []ContextMode
 }
+type unavailableItem interface{ Unavailable() bool }
 
 type toastExpired struct{ id uint64 }
 
@@ -128,9 +129,10 @@ type browserModel[T item] struct {
 }
 
 var (
-	activeBorder   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#7D7AFF"})
-	inactiveBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#A0A0A0", Dark: "#555555"})
-	toastBorder    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#B42318", Dark: "#FF6B6B"}).Padding(0, 1)
+	activeBorder     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#7D7AFF"})
+	inactiveBorder   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#A0A0A0", Dark: "#555555"})
+	toastBorder      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#B42318", Dark: "#FF6B6B"}).Padding(0, 1)
+	unavailableStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#8A8A8A", Dark: "#666666"}).Strikethrough(true)
 )
 
 func (m browserModel[T]) Init() tea.Cmd { return nil }
@@ -1026,6 +1028,9 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 				label += strings.Repeat(" ", max(1, available-lipgloss.Width(label)-lipgloss.Width(context))) + hintStyle.Render(context)
 			} else {
 				label = ansi.Truncate(label, available, "...")
+			}
+			if unavailable, ok := any(items[i].item).(unavailableItem); ok && unavailable.Unavailable() {
+				label = unavailableStyle.Render(label)
 			}
 			row := "  " + label
 			if i == selected {
