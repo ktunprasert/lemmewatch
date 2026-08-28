@@ -39,6 +39,7 @@ type metaResponse struct {
 			Season   int    `json:"season"`
 			Episode  int    `json:"episode"`
 			Released string `json:"released"`
+			Rating   string `json:"rating"`
 		} `json:"videos"`
 	} `json:"meta"`
 }
@@ -105,7 +106,11 @@ func (c Client) Episodes(ctx context.Context, imdbID string) ([]model.Episode, e
 			title = video.Title
 		}
 		released, _ := time.Parse(time.RFC3339, video.Released)
-		episodes = append(episodes, model.Episode{ID: video.ID, Title: title, Season: video.Season, Episode: video.Episode, Released: released})
+		rating := video.Rating
+		if rating == "0" {
+			rating = ""
+		}
+		episodes = append(episodes, model.Episode{ID: video.ID, Title: title, Season: video.Season, Episode: video.Episode, Released: released, Rating: rating})
 	}
 	return episodes, nil
 }

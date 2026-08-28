@@ -39,4 +39,5 @@ type Episode struct {
 	Season   int
 	Episode  int
 	Released time.Time
+	Rating   string
 }

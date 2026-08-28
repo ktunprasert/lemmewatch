@@ -90,7 +90,7 @@ default ranking sorts. `x` stops directly managed playback.
 
 Each list row uses a left-aligned name and right-aligned contextual detail.
 Press `m` for pane-specific modes: media year/rating/ID/type, season episode count,
-episode air date/ID, and torrent quality/cache/size/seeders/source/filename.
+episode air date/rating/ID, and torrent quality/cache/size/seeders/source/filename.
 Year, quality, and cache sorting automatically select their matching mode.
 Episodes with future air dates use muted text to indicate that they may not be
 available yet.

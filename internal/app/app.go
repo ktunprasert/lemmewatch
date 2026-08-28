@@ -76,7 +76,7 @@ func (n navigationChoice) ContextModes() []selector.ContextMode {
 		if !n.episode.Released.IsZero() {
 			date = n.episode.Released.Format("2006-01-02")
 		}
-		return []selector.ContextMode{{Group: "episode", Key: "a", Name: "Air date", Value: date}, {Group: "episode", Key: "i", Name: "ID", Value: n.episode.ID}}
+		return []selector.ContextMode{{Group: "episode", Key: "a", Name: "Air date", Value: date}, {Group: "episode", Key: "r", Name: "Rating", Value: n.episode.Rating}, {Group: "episode", Key: "i", Name: "ID", Value: n.episode.ID}}
 	case navigationStream:
 		quality := ""
 		if n.stream.Quality > 0 {
