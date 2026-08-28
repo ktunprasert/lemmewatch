@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"lemmewatch/internal/model"
 )
@@ -91,10 +92,27 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 		}
 		seen[hash+":"+strconv.Itoa(raw.FileIdx)] = true
 		text := raw.Name + " " + raw.Title
-		streams = append(streams, model.Stream{Hash: hash, FileIndex: raw.FileIdx, Title: raw.Title, Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: size(text), Source: raw.Name})
+		streams = append(streams, model.Stream{Hash: hash, FileIndex: raw.FileIdx, Title: displayTitle(raw.Title), Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: size(text), Source: raw.Name})
 	}
 	Rank(streams)
 	return streams, nil
+}
+
+func displayTitle(value string) string {
+	for line := range strings.SplitSeq(value, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		line = strings.Map(func(r rune) rune {
+			if unicode.Is(unicode.So, r) || r == '\ufe0f' || r == '\u200d' {
+				return -1
+			}
+			return r
+		}, line)
+		return strings.Join(strings.Fields(line), " ")
+	}
+	return ""
 }
 
 func validHash(hash string) bool { b, err := hex.DecodeString(hash); return err == nil && len(b) == 20 }
