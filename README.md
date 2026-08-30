@@ -3,6 +3,11 @@
 Local-first CLI/TUI for finding and streaming movies through Stremio-compatible
 catalog and stream addons, TorBox, and a local media player.
 
+> [!IMPORTANT]
+> Lemmewatch is an unofficial project and is not affiliated with or endorsed by
+> TorBox, Stremio, Cinemeta, or Torrentio. It does not provide media. Users are
+> responsible for complying with applicable laws and third-party service terms.
+
 ## Setup
 
 Install pinned Go toolchain and build:
@@ -134,14 +139,14 @@ Builds embed `git describe --always --dirty`. Verify an artifact with:
 lemmewatch --version
 ```
 
-Public releases use date-based versions such as `v2026.08.1`. Create and push
-the next `vYYYY.MM.N` tag to build all supported targets and publish a GitHub
+Public releases use date-based versions such as `v2026.8.1`. Create and push
+the next `vYYYY.M.N` tag to build all supported targets and publish a GitHub
 Release with generated notes. Release binaries report the tag through
 `--version`.
 
 ```sh
-git tag v2026.08.1
-git push origin v2026.08.1
+git tag v2026.8.1
+git push origin v2026.8.1
 ```
 
 The Windows build produces `lemmewatch.exe` and
