@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - "v[0-9][0-9][0-9][0-9].[0-9][0-9].*"
+      - "v[0-9][0-9][0-9][0-9].[1-9].*"
+      - "v[0-9][0-9][0-9][0-9].1[0-2].*"
 
 permissions:
   contents: write
@@ -16,12 +17,12 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
         run: |
-          if [[ ! "$VERSION" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]+$ ]]; then
+          if [[ ! "$VERSION" =~ ^v[0-9]{4}\.([1-9]|1[0-2])\.[0-9]+$ ]]; then
             echo "Invalid release version: $VERSION" >&2
             exit 1
           fi
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -52,10 +53,10 @@ jobs:
       GOARCH: ${{ matrix.goarch }}
       VERSION: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -77,7 +78,7 @@ jobs:
             tar -C "staging/${{ matrix.target }}" -czf \
               "dist/lemmewatch-${VERSION}-${{ matrix.target }}.tar.gz" .
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: lemmewatch-${{ matrix.target }}
           path: dist/
@@ -90,10 +91,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           pattern: lemmewatch-*
           path: dist
