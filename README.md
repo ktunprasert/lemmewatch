@@ -134,6 +134,16 @@ Builds embed `git describe --always --dirty`. Verify an artifact with:
 lemmewatch --version
 ```
 
+Public releases use date-based versions such as `v2026.08.1`. Create and push
+the next `vYYYY.MM.N` tag to build all supported targets and publish a GitHub
+Release with generated notes. Release binaries report the tag through
+`--version`.
+
+```sh
+git tag v2026.08.1
+git push origin v2026.08.1
+```
+
 The Windows build produces `lemmewatch.exe` and
 `lemmewatch-launcher.exe`. Run `lemmewatch.exe` directly from a terminal or
 place it on `PATH`. Explorer and shortcut users can open the sibling GUI

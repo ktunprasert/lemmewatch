@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9][0-9][0-9][0-9].[0-9][0-9].*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release tag
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$VERSION" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]+$ ]]; then
+            echo "Invalid release version: $VERSION" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+            binary: lemmewatch
+          - target: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            binary: lemmewatch
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
+            binary: lemmewatch.exe
+    env:
+      CGO_ENABLED: "0"
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build ${{ matrix.target }}
+        run: |
+          mkdir -p "staging/${{ matrix.target }}" dist
+          go build -trimpath \
+            -ldflags "-X lemmewatch/internal/buildinfo.Commit=$VERSION" \
+            -o "staging/${{ matrix.target }}/${{ matrix.binary }}" \
+            ./cmd/lemmewatch
+          if [[ "$GOOS" == "windows" ]]; then
+            go build -trimpath -ldflags "-H=windowsgui" \
+              -o "staging/${{ matrix.target }}/lemmewatch-launcher.exe" \
+              ./cmd/launcher
+            zip -j "dist/lemmewatch-${VERSION}-${{ matrix.target }}.zip" \
+              "staging/${{ matrix.target }}/lemmewatch.exe" \
+              "staging/${{ matrix.target }}/lemmewatch-launcher.exe"
+          else
+            tar -C "staging/${{ matrix.target }}" -czf \
+              "dist/lemmewatch-${VERSION}-${{ matrix.target }}.tar.gz" .
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lemmewatch-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: lemmewatch-*
+          path: dist
+          merge-multiple: true
+      - name: Create GitHub release
+        run: |
+          gh release create "$VERSION" dist/* \
+            --verify-tag \
+            --title "$VERSION" \
+            --generate-notes
