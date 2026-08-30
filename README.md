@@ -8,6 +8,8 @@ catalog and stream addons, TorBox, and a local media player.
 > TorBox, Stremio, Cinemeta, or Torrentio. It does not provide media. Users are
 > responsible for complying with applicable laws and third-party service terms.
 
+https://github.com/user-attachments/assets/a2cc832c-c799-4c26-8949-418951656481
+
 ## Setup
 
 Install pinned Go toolchain and build:
