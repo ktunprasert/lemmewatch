@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"lemmewatch/internal/model"
@@ -27,6 +28,7 @@ func TestWebStreamrReturnsPlayableDirectStreams(t *testing.T) {
 	if len(streams) != 1 || streams[0].Provider != WebStreamrID || !streams[0].Playable || streams[0].Cache != model.CacheNotApplicable {
 		t.Fatalf("streams = %#v", streams)
 	}
+	p.Client.HTTP = nil
 	playback, err := p.Resolve(context.Background(), streams[0])
 	if err != nil || playback.URL != streams[0].URL {
 		t.Fatalf("playback = %#v, %v", playback, err)
@@ -56,6 +58,28 @@ func TestWebStreamrRejectsHeaderDependentPlayback(t *testing.T) {
 	_, err := p.Resolve(context.Background(), model.Stream{Provider: WebStreamrID, URL: "https://example.invalid/video", Headers: map[string]string{"Referer": "https://example.invalid/"}})
 	if err == nil {
 		t.Fatal("header-dependent stream resolved")
+	}
+}
+
+func TestWebStreamrUnwrapsDownloadRedirect(t *testing.T) {
+	media := "https://video-downloads.googleusercontent.com/video"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://gamerxyt.com/dl.php?link="+url.QueryEscape(media), http.StatusFound)
+	}))
+	defer server.Close()
+	p := WebStreamr{Client: stremio.Client{HTTP: server.Client()}}
+	playback, err := p.Resolve(context.Background(), model.Stream{Provider: WebStreamrID, URL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if playback.URL != media {
+		t.Fatalf("URL = %q", playback.URL)
+	}
+}
+
+func TestUnwrapDownloadURLRejectsUnknownWrapper(t *testing.T) {
+	if got := unwrapDownloadURL("https://example.invalid/dl.php?link=https://media.example/video"); got != "" {
+		t.Fatalf("URL = %q", got)
 	}
 }
 

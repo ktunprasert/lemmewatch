@@ -3,6 +3,9 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"lemmewatch/internal/model"
@@ -116,14 +119,70 @@ func (p WebStreamr) Streams(ctx context.Context, request Request) ([]model.Strea
 	return direct, nil
 }
 
-func (p WebStreamr) Resolve(_ context.Context, stream model.Stream) (model.Playback, error) {
+func (p WebStreamr) Resolve(ctx context.Context, stream model.Stream) (model.Playback, error) {
 	if stream.Provider != p.ID() || stream.URL == "" {
 		return model.Playback{}, fmt.Errorf("invalid WebStreamr stream")
 	}
 	if len(stream.Headers) > 0 {
 		return model.Playback{}, fmt.Errorf("stream requires unsupported request headers")
 	}
-	return model.Playback{URL: stream.URL}, nil
+	resolved, err := resolveHTTP(ctx, p.Client.HTTP, stream.URL)
+	if err != nil {
+		return model.Playback{}, err
+	}
+	return model.Playback{URL: resolved}, nil
+}
+
+func resolveHTTP(ctx context.Context, httpClient *http.Client, rawURL string) (string, error) {
+	if httpClient == nil {
+		return rawURL, nil
+	}
+	client := *httpClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	current := rawURL
+	for range 8 {
+		if direct := unwrapDownloadURL(current); direct != "" {
+			return direct, nil
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, current, nil)
+		if err != nil {
+			return "", fmt.Errorf("stream resolution failed")
+		}
+		req.Header.Set("Range", "bytes=0-0")
+		req.Header.Set("User-Agent", "lemmewatch/0.1")
+		res, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("stream resolution failed")
+		}
+		res.Body.Close()
+		if res.StatusCode >= 300 && res.StatusCode < 400 {
+			location, err := res.Location()
+			if err != nil {
+				return "", fmt.Errorf("stream resolution returned invalid redirect")
+			}
+			current = location.String()
+			continue
+		}
+		contentType := strings.ToLower(res.Header.Get("Content-Type"))
+		if res.StatusCode >= 200 && res.StatusCode < 300 && !strings.Contains(contentType, "text/html") {
+			return current, nil
+		}
+		return "", fmt.Errorf("stream resolution returned no media")
+	}
+	return "", fmt.Errorf("stream resolution returned too many redirects")
+}
+
+func unwrapDownloadURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || !strings.EqualFold(u.Hostname(), "gamerxyt.com") || u.Path != "/dl.php" {
+		return ""
+	}
+	direct := u.Query().Get("link")
+	parsed, err := url.Parse(direct)
+	if err != nil || parsed.Host == "" || !(strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) {
+		return ""
+	}
+	return parsed.String()
 }
 
 func lookup(client stremio.Client, ctx context.Context, request Request) ([]model.Stream, error) {
