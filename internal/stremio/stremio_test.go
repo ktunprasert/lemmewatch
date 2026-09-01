@@ -82,7 +82,7 @@ func TestStreamsPreservesDirectHTTPMetadata(t *testing.T) {
 
 func TestStreamsUsesDescriptionMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"streams":[{"name":"PenguPlay 1080p","description":"Dune (2021)\n1080p • MP4 • WEBRip • 9.6 Mbps\n10.34 GB","url":"https://media.example/video"}]}`))
+		_, _ = w.Write([]byte(`{"streams":[{"name":"PenguPlay 1080p","description":"Dune (2021)\n1080p • MP4 • WEBRip • 9.6 Mbps","url":"https://media.example/video","behaviorHints":{"videoSize":"10340000000"}}]}`))
 	}))
 	defer server.Close()
 	items, err := (Client{BaseURL: server.URL, HTTP: server.Client()}).Streams(context.Background(), "tt1")

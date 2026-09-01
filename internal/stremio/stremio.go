@@ -27,6 +27,28 @@ type Client struct {
 	HTTP    *http.Client
 }
 
+type flexibleInt64 int64
+
+func (value *flexibleInt64) UnmarshalJSON(data []byte) error {
+	text := strings.TrimSpace(string(data))
+	if text == "" || text == "null" {
+		*value = 0
+		return nil
+	}
+	if text[0] == '"' {
+		if err := json.Unmarshal([]byte(text), &text); err != nil {
+			return err
+		}
+	}
+	parsed, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		*value = 0
+		return nil
+	}
+	*value = flexibleInt64(parsed)
+	return nil
+}
+
 type response struct {
 	Streams []struct {
 		Name          string `json:"name"`
@@ -36,9 +58,9 @@ type response struct {
 		FileIdx       int    `json:"fileIdx"`
 		URL           string `json:"url"`
 		BehaviorHints struct {
-			Filename     string `json:"filename"`
-			NotWebReady  bool   `json:"notWebReady"`
-			VideoSize    int64  `json:"videoSize"`
+			Filename     string        `json:"filename"`
+			NotWebReady  bool          `json:"notWebReady"`
+			VideoSize    flexibleInt64 `json:"videoSize"`
 			ProxyHeaders struct {
 				Request map[string]string `json:"request"`
 			} `json:"proxyHeaders"`
@@ -124,7 +146,7 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 		title := streamTitle(raw.Title, raw.Description, raw.Name)
 		streamSize := size(text)
 		if streamSize == 0 {
-			streamSize = raw.BehaviorHints.VideoSize
+			streamSize = int64(raw.BehaviorHints.VideoSize)
 		}
 		streams = append(streams, model.Stream{Hash: hash, URL: streamURL, Headers: raw.BehaviorHints.ProxyHeaders.Request, FileIndex: raw.FileIdx, Title: title, Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: streamSize, NotWebReady: raw.BehaviorHints.NotWebReady, Source: raw.Name})
 	}
