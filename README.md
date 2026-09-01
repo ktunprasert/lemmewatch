@@ -1,12 +1,14 @@
 # Lemmewatch
 
 Local-first CLI/TUI for finding and streaming movies through Stremio-compatible
-catalog and stream addons, WebStreamr or TorBox, and a local media player.
+catalog and stream addons, WebStreamr, PenguPlay, or TorBox, and a local media
+player.
 
 > [!IMPORTANT]
 > Lemmewatch is an unofficial project and is not affiliated with or endorsed by
-> TorBox, Stremio, Cinemeta, Torrentio, or WebStreamr. It does not provide media. Users are
-> responsible for complying with applicable laws and third-party service terms.
+> TorBox, Stremio, Cinemeta, Torrentio, WebStreamr, or PenguPlay. It does not
+> provide media. Users are responsible for complying with applicable laws and
+> third-party service terms.
 
 https://github.com/user-attachments/assets/a2cc832c-c799-4c26-8949-418951656481
 
@@ -30,15 +32,20 @@ LEMMEWATCH_CATALOG_URL
 LEMMEWATCH_STREAM_URL
 LEMMEWATCH_WEBSTREAMR_URL
 LEMMEWATCH_PROVIDER
+PENGUPLAY_MANIFEST_URL
 TORBOX_API_URL
 LEMMEWATCH_PLAYER
 ```
 
-`LEMMEWATCH_PROVIDER` accepts `torbox` or `webstreamr` and overrides the saved
-provider preference. `LEMMEWATCH_STREAM_URL` configures Torrentio for TorBox.
-`LEMMEWATCH_WEBSTREAMR_URL` configures WebStreamr. Without an override or valid
-saved preference, Lemmewatch selects TorBox if a token exists and WebStreamr
-otherwise.
+`LEMMEWATCH_PROVIDER` accepts `torbox`, `webstreamr`, or `pengu` and overrides
+the saved provider preference. Pengu is available only when
+`PENGUPLAY_MANIFEST_URL` contains the configured manifest URL copied after
+signing in at `https://pengu.uk`. This URL contains a bearer credential: keep it
+in ignored local configuration and never publish it. `LEMMEWATCH_STREAM_URL`
+configures Torrentio for TorBox. `LEMMEWATCH_WEBSTREAMR_URL` configures
+WebStreamr. Without an override or valid saved preference, Lemmewatch selects
+TorBox if a token exists and WebStreamr otherwise; Pengu remains a selectable
+fallback.
 
 `LEMMEWATCH_PLAYER` overrides URL opening. By default, Lemmewatch uses
 `xdg-open` on Linux and `open` on macOS so resolved video URLs open with the
@@ -81,14 +88,16 @@ by default. Query strings are omitted because TorBox URLs may contain tokens.
 
 Bare query and `watch` run movie and series flows. Series traversal adds season
 and episode panes before stream selection. TorBox candidates resolve through
-TorBox; WebStreamr extractor URLs launch directly in the configured player.
+TorBox; WebStreamr and Pengu HTTP URLs launch directly in the configured player.
 
 For multi-file season packs, addon filename metadata selects the matching TorBox
 file before season/episode pattern matching or legacy index fallback.
 
-WebStreamr streams may be non-seekable or temporarily unavailable because their
-HTTP sources change independently. Streams requiring custom request headers are
-currently unavailable; player-specific header forwarding remains future work.
+WebStreamr and Pengu streams may be temporarily unavailable because their HTTP
+sources change independently. Some WebStreamr streams are non-seekable. Tested
+Pengu 2Peckle and PixelDrain streams supported seeking and mpv playback. Streams
+requiring custom request headers are currently unavailable; player-specific
+header forwarding remains future work.
 
 Interactive watch uses adaptive navigation panes. Wide terminals show up to
 three latest navigation panes at a `1:1:2`
@@ -104,7 +113,7 @@ While filtering, Ctrl-W clears a word and Ctrl-U clears the line. In the torrent
 pane, `c` toggles cached/all for TorBox and `v` cycles quality; quality preference persists
 under the XDG config directory. The active Movie/Series tab persists there too.
 Uncached TorBox playback is not implemented yet. Cache filtering does not apply
-to direct WebStreamr streams.
+to direct WebStreamr or Pengu streams.
 
 Playback leaves the browser open. Press `s` to stop a directly managed player,
 or navigate back through episodes and titles while it runs. Native `open`,

@@ -61,6 +61,28 @@ func TestWebStreamrRejectsHeaderDependentPlayback(t *testing.T) {
 	}
 }
 
+func TestPenguUsesConfiguredManifestAndMarksHeadersUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != "/secret-config/stream/movie/tt1160419.json" {
+			t.Errorf("path = %q", r.URL.EscapedPath())
+		}
+		_, _ = w.Write([]byte(`{"streams":[{"name":"PenguPlay 1080p","url":"https://media.example/video"},{"name":"PenguPlay 720p","url":"https://media.example/protected","behaviorHints":{"proxyHeaders":{"request":{"Referer":"https://source.example/"}}}}]}`))
+	}))
+	defer server.Close()
+	p := Pengu{Client: stremio.Client{BaseURL: server.URL + "/secret-config/manifest.json", HTTP: server.Client()}}
+	streams, err := p.Streams(context.Background(), Request{MediaType: model.Movie, ID: "tt1160419"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(streams) != 2 || streams[0].Provider != PenguID || !streams[0].Playable || streams[1].Playable {
+		t.Fatalf("streams = %#v", streams)
+	}
+	_, err = p.Resolve(context.Background(), streams[1])
+	if err == nil {
+		t.Fatal("header-dependent Pengu stream resolved")
+	}
+}
+
 func TestWebStreamrUnwrapsDownloadRedirect(t *testing.T) {
 	media := "https://video-downloads.googleusercontent.com/video"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

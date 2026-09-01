@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	qualityRE = regexp.MustCompile(`(?i)\b(2160|1080|720|480)p\b`)
+	qualityRE = regexp.MustCompile(`(?i)\b(2160|1080|720|480|360)p\b`)
 	seedersRE = regexp.MustCompile(`(?i)(?:👤|seed(?:ers?)?\s*[:=]?)\s*(\d+)`)
 	sizeRE    = regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s*(GB|MB)\b`)
 )
@@ -31,6 +31,7 @@ type response struct {
 	Streams []struct {
 		Name          string `json:"name"`
 		Title         string `json:"title"`
+		Description   string `json:"description"`
 		InfoHash      string `json:"infoHash"`
 		FileIdx       int    `json:"fileIdx"`
 		URL           string `json:"url"`
@@ -119,11 +120,8 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 			continue
 		}
 		seen[key] = true
-		text := raw.Name + " " + raw.Title
-		title := displayTitle(raw.Title)
-		if title == "" {
-			title = displayTitle(raw.Name)
-		}
+		text := raw.Name + " " + raw.Title + " " + raw.Description
+		title := streamTitle(raw.Title, raw.Description, raw.Name)
 		streamSize := size(text)
 		if streamSize == 0 {
 			streamSize = raw.BehaviorHints.VideoSize
@@ -131,6 +129,25 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 		streams = append(streams, model.Stream{Hash: hash, URL: streamURL, Headers: raw.BehaviorHints.ProxyHeaders.Request, FileIndex: raw.FileIdx, Title: title, Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: streamSize, NotWebReady: raw.BehaviorHints.NotWebReady, Source: raw.Name})
 	}
 	return streams, nil
+}
+
+func streamTitle(title, description, name string) string {
+	if title = displayTitle(title); title != "" {
+		return title
+	}
+	lines := make([]string, 0, 2)
+	for line := range strings.SplitSeq(description, "\n") {
+		if line = displayTitle(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) > 1 {
+		return lines[1]
+	}
+	if len(lines) == 1 {
+		return lines[0]
+	}
+	return displayTitle(name)
 }
 
 func displayTitle(value string) string {

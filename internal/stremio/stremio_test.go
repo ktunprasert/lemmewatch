@@ -80,6 +80,34 @@ func TestStreamsPreservesDirectHTTPMetadata(t *testing.T) {
 	}
 }
 
+func TestStreamsUsesDescriptionMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"streams":[{"name":"PenguPlay 1080p","description":"Dune (2021)\n1080p • MP4 • WEBRip • 9.6 Mbps\n10.34 GB","url":"https://media.example/video"}]}`))
+	}))
+	defer server.Close()
+	items, err := (Client{BaseURL: server.URL, HTTP: server.Client()}).Streams(context.Background(), "tt1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Title != "1080p • MP4 • WEBRip • 9.6 Mbps" || items[0].Quality != 1080 || items[0].Size != 10_340_000_000 {
+		t.Fatalf("items = %#v", items)
+	}
+}
+
+func TestStreamsRecognizes360p(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"streams":[{"name":"PenguPlay 360p","url":"https://media.example/video"}]}`))
+	}))
+	defer server.Close()
+	items, err := (Client{BaseURL: server.URL, HTTP: server.Client()}).Streams(context.Background(), "tt1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Quality != 360 {
+		t.Fatalf("items = %#v", items)
+	}
+}
+
 func TestStreamsAcceptsConfiguredManifestURL(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.EscapedPath() != "/%7B%22proxy%22%3A%22https%3A%2F%2Fexample.invalid%22%7D/stream/movie/tt1.json" {

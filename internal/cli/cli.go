@@ -73,6 +73,11 @@ func configuredApp(verbose *bool) app.App {
 		provider.TorBoxID:     provider.TorBox{StreamsClient: torrentioClient, TorBoxClient: torboxClient},
 	}
 	providerNames := []string{provider.WebStreamrID}
+	penguURL := os.Getenv("PENGUPLAY_MANIFEST_URL")
+	if penguURL != "" {
+		providers[provider.PenguID] = provider.Pengu{Client: stremio.Client{BaseURL: penguURL, HTTP: httpClient}}
+		providerNames = append(providerNames, provider.PenguID)
+	}
 	if torboxClient.Token != "" {
 		providerNames = append([]string{provider.TorBoxID}, providerNames...)
 	}
@@ -88,7 +93,9 @@ func configuredApp(verbose *bool) app.App {
 		providerNames = []string{configured}
 	}
 	var providerError error
-	if providers[providerID] == nil {
+	if providerID == provider.PenguID && penguURL == "" {
+		providerError = fmt.Errorf("PENGUPLAY_MANIFEST_URL is required for Pengu")
+	} else if providers[providerID] == nil {
 		providerError = fmt.Errorf("invalid LEMMEWATCH_PROVIDER %q", providerID)
 	}
 	if configured := env("LEMMEWATCH_PLAYER", preferences.Player); configured != "" {

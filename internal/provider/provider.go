@@ -16,6 +16,7 @@ import (
 const (
 	TorBoxID     = "torbox"
 	WebStreamrID = "webstreamr"
+	PenguID      = "pengu"
 )
 
 type Request struct {
@@ -97,7 +98,29 @@ type WebStreamr struct {
 func (WebStreamr) ID() string { return WebStreamrID }
 
 func (p WebStreamr) Streams(ctx context.Context, request Request) ([]model.Stream, error) {
-	streams, err := lookup(p.Client, ctx, request)
+	return directStreams(ctx, p.ID(), p.Client, request)
+}
+
+func (p WebStreamr) Resolve(ctx context.Context, stream model.Stream) (model.Playback, error) {
+	return resolveDirect(ctx, p.ID(), "WebStreamr", p.Client, stream)
+}
+
+type Pengu struct {
+	Client stremio.Client
+}
+
+func (Pengu) ID() string { return PenguID }
+
+func (p Pengu) Streams(ctx context.Context, request Request) ([]model.Stream, error) {
+	return directStreams(ctx, p.ID(), p.Client, request)
+}
+
+func (p Pengu) Resolve(ctx context.Context, stream model.Stream) (model.Playback, error) {
+	return resolveDirect(ctx, p.ID(), "Pengu", p.Client, stream)
+}
+
+func directStreams(ctx context.Context, providerID string, client stremio.Client, request Request) ([]model.Stream, error) {
+	streams, err := lookup(client, ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +129,7 @@ func (p WebStreamr) Streams(ctx context.Context, request Request) ([]model.Strea
 		if stream.URL == "" {
 			continue
 		}
-		stream.Provider = p.ID()
+		stream.Provider = providerID
 		stream.Season = request.Season
 		stream.Episode = request.Episode
 		stream.Cache = model.CacheNotApplicable
@@ -119,14 +142,14 @@ func (p WebStreamr) Streams(ctx context.Context, request Request) ([]model.Strea
 	return direct, nil
 }
 
-func (p WebStreamr) Resolve(ctx context.Context, stream model.Stream) (model.Playback, error) {
-	if stream.Provider != p.ID() || stream.URL == "" {
-		return model.Playback{}, fmt.Errorf("invalid WebStreamr stream")
+func resolveDirect(ctx context.Context, providerID, providerName string, client stremio.Client, stream model.Stream) (model.Playback, error) {
+	if stream.Provider != providerID || stream.URL == "" {
+		return model.Playback{}, fmt.Errorf("invalid %s stream", providerName)
 	}
 	if len(stream.Headers) > 0 {
 		return model.Playback{}, fmt.Errorf("stream requires unsupported request headers")
 	}
-	resolved, err := resolveHTTP(ctx, p.Client.HTTP, stream.URL)
+	resolved, err := resolveHTTP(ctx, client.HTTP, stream.URL)
 	if err != nil {
 		return model.Playback{}, err
 	}
