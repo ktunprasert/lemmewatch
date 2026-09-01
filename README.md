@@ -53,12 +53,12 @@ desktop's configured handler. Windows uses its registered URL handler through
 `rundll32`. Set it to `mpv`, `vlc`, or another executable to force a specific
 player.
 
-Open `?`, select **Settings**, then press Enter to edit saved defaults under
-the user's config directory. Up/Down selects a setting; Left/Right cycles media
-type, quality, cached-only filtering, player, and pane detail modes. Enter on
-Provider cycles available playback providers. Player accepts a custom
-executable. `LEMMEWATCH_PLAYER` takes precedence over the saved player
-preference.
+Press `;`, or open `?` and select **Settings**, to edit saved defaults under the
+user's config directory. Press `;` again or Esc to close. Up/Down selects a
+setting; Left/Right cycles media type, quality, cached-only filtering, player,
+and pane detail modes. Enter on Provider cycles available playback providers.
+Player accepts a custom executable. `LEMMEWATCH_PLAYER` takes precedence over
+the saved player preference.
 
 Player settings may include arguments, for example `mpv.exe --no-border` or
 `"C:\\Program Files\\mpv\\mpv.exe" --no-border`. Commands are parsed into

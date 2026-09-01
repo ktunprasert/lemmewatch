@@ -857,6 +857,17 @@ func TestHelpPaletteOpensSettings(t *testing.T) {
 	}
 }
 
+func TestSemicolonTogglesSettings(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	for _, open := range []bool{true, false} {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{';'}})
+		m = next.(browserModel[testChoice])
+		if m.settingsMenu != open {
+			t.Fatalf("settings open = %t, want %t", m.settingsMenu, open)
+		}
+	}
+}
+
 func TestSettingsCyclesAndPersistsDefaults(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
 	m.options.ParentGroups = []string{"movie", "series"}

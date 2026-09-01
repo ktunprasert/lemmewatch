@@ -330,7 +330,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.helpMenu = true
 			m.helpFilter = ""
 			m.helpIndex = 0
-		case "settings":
+		case ";":
 			m.settingsMenu = true
 			m.settingsIndex = 0
 		case "ctrl+p":
@@ -504,7 +504,7 @@ var settingModeGroups = []string{"media", "season", "episode", "stream"}
 
 func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc":
+	case "esc", ";":
 		m.settingsMenu = false
 	case "up", "k":
 		m.settingsIndex = clamp(m.settingsIndex-1, 9)
@@ -675,7 +675,7 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
 		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
 		{keys: "?", label: "Show keybindings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
-		{keys: "Settings", label: "Change saved defaults", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("settings")}},
+		{keys: ";", label: "Change saved defaults", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{';'}}},
 		{keys: "q", label: "Quit", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
 	}
 	if len(m.options.ParentGroups) > 1 {
