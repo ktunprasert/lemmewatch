@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -36,7 +35,12 @@ type response struct {
 		FileIdx       int    `json:"fileIdx"`
 		URL           string `json:"url"`
 		BehaviorHints struct {
-			Filename string `json:"filename"`
+			Filename     string `json:"filename"`
+			NotWebReady  bool   `json:"notWebReady"`
+			VideoSize    int64  `json:"videoSize"`
+			ProxyHeaders struct {
+				Request map[string]string `json:"request"`
+			} `json:"proxyHeaders"`
 		} `json:"behaviorHints"`
 	} `json:"streams"`
 }
@@ -54,7 +58,16 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 	if err != nil {
 		return nil, fmt.Errorf("stream addon URL: %w", err)
 	}
-	u.Path = path.Join(u.Path, "stream", mediaType, id+".json")
+	basePath := strings.TrimSuffix(u.EscapedPath(), "/")
+	if strings.HasSuffix(basePath, "/manifest.json") {
+		basePath = strings.TrimSuffix(basePath, "/manifest.json")
+	}
+	escapedPath := basePath + "/stream/" + url.PathEscape(mediaType) + "/" + url.PathEscape(id) + ".json"
+	u.RawPath = escapedPath
+	u.Path, err = url.PathUnescape(escapedPath)
+	if err != nil {
+		return nil, fmt.Errorf("stream addon URL: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("stream lookup: %w", err)
@@ -87,14 +100,36 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 				}
 			}
 		}
-		if !validHash(hash) || raw.FileIdx < 0 || seen[hash+":"+strconv.Itoa(raw.FileIdx)] {
+		if !validHash(hash) {
+			hash = ""
+		}
+		streamURL := ""
+		if raw.URL != "" && !strings.HasPrefix(strings.ToLower(raw.URL), "magnet:") {
+			if parsed, err := url.Parse(raw.URL); err == nil && (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) && parsed.Host != "" {
+				streamURL = parsed.String()
+			}
+		}
+		key := ""
+		if hash != "" && raw.FileIdx >= 0 {
+			key = "torrent:" + hash + ":" + strconv.Itoa(raw.FileIdx)
+		} else if streamURL != "" {
+			key = "url:" + streamURL
+		}
+		if key == "" || seen[key] {
 			continue
 		}
-		seen[hash+":"+strconv.Itoa(raw.FileIdx)] = true
+		seen[key] = true
 		text := raw.Name + " " + raw.Title
-		streams = append(streams, model.Stream{Hash: hash, FileIndex: raw.FileIdx, Title: displayTitle(raw.Title), Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: size(text), Source: raw.Name})
+		title := displayTitle(raw.Title)
+		if title == "" {
+			title = displayTitle(raw.Name)
+		}
+		streamSize := size(text)
+		if streamSize == 0 {
+			streamSize = raw.BehaviorHints.VideoSize
+		}
+		streams = append(streams, model.Stream{Hash: hash, URL: streamURL, Headers: raw.BehaviorHints.ProxyHeaders.Request, FileIndex: raw.FileIdx, Title: title, Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: streamSize, NotWebReady: raw.BehaviorHints.NotWebReady, Source: raw.Name})
 	}
-	Rank(streams)
 	return streams, nil
 }
 
@@ -145,8 +180,8 @@ func size(s string) int64 {
 func Rank(streams []model.Stream) {
 	sort.SliceStable(streams, func(i, j int) bool {
 		a, b := streams[i], streams[j]
-		if a.Cached != b.Cached {
-			return a.Cached
+		if a.Cache != b.Cache {
+			return a.Cache == model.CacheCached
 		}
 		if a.Quality != b.Quality {
 			return a.Quality > b.Quality
@@ -157,6 +192,9 @@ func Rank(streams []model.Stream) {
 		if a.Size != b.Size {
 			return a.Size < b.Size
 		}
-		return a.Hash < b.Hash
+		if a.Hash != b.Hash {
+			return a.Hash < b.Hash
+		}
+		return a.URL < b.URL
 	})
 }

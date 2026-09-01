@@ -13,14 +13,17 @@ import (
 	"lemmewatch/internal/config"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
+	"lemmewatch/internal/provider"
 	"lemmewatch/internal/selector"
-	"lemmewatch/internal/stremio"
 	"lemmewatch/internal/torbox"
 )
 
 type App struct {
 	Catalog          catalog.Client
-	Streams          stremio.Client
+	Providers        map[string]provider.Provider
+	ProviderNames    []string
+	Provider         string
+	ProviderError    error
 	TorBox           torbox.Client
 	Player           player.Player
 	DefaultPlayer    player.Player
@@ -28,6 +31,17 @@ type App struct {
 	In               io.Reader
 	Out              io.Writer
 	Err              io.Writer
+}
+
+func (a App) ValidateProvider() error {
+	if a.ProviderError != nil {
+		return a.ProviderError
+	}
+	if a.Provider == provider.TorBoxID && a.TorBox.Token == "" {
+		return fmt.Errorf("TORBOX_API_TOKEN is required")
+	}
+	_, err := a.provider(a.Provider)
+	return err
 }
 
 type navigationKind int
@@ -122,12 +136,14 @@ func (n navigationChoice) ContextModes() []selector.ContextMode {
 		if n.stream.Quality > 0 {
 			quality = fmt.Sprintf("%dp", n.stream.Quality)
 		}
-		cached := "uncached"
-		if n.stream.Cached {
+		cached := "direct"
+		if n.stream.Cache == model.CacheCached {
 			cached = "cached"
+		} else if n.stream.Cache == model.CacheUncached {
+			cached = "uncached"
 		}
 		return []selector.ContextMode{
-			{Group: "stream", Key: "q", Name: "Quality", Value: quality}, {Group: "stream", Key: "c", Name: "Cached", Value: cached},
+			{Group: "stream", Key: "q", Name: "Quality", Value: quality}, {Group: "stream", Key: "c", Name: "Availability", Value: cached},
 			{Group: "stream", Key: "z", Name: "Size", Value: formatSize(n.stream.Size)}, {Group: "stream", Key: "s", Name: "Seeders", Value: strconv.Itoa(n.stream.Seeders)},
 			{Group: "stream", Key: "o", Name: "Source", Value: n.stream.Source}, {Group: "stream", Key: "f", Name: "Filename", Value: n.stream.Filename},
 		}
@@ -154,12 +170,12 @@ func (n navigationChoice) Unavailable() bool {
 }
 func (n navigationChoice) CacheKey() string {
 	if n.kind == navigationEpisode {
-		return "torrents:" + n.episode.ID
+		return "streams:" + n.episode.ID
 	}
 	return ""
 }
-func (n navigationChoice) StreamInfo() (bool, int, bool) {
-	return n.stream.Cached, n.stream.Quality, n.kind == navigationStream
+func (n navigationChoice) StreamInfo() (selector.StreamInfo, bool) {
+	return selector.StreamInfo{Cached: n.stream.Cache == model.CacheCached, CacheApplicable: n.stream.Cache != model.CacheNotApplicable, Playable: n.stream.Playable, Quality: n.stream.Quality}, n.kind == navigationStream
 }
 func (n navigationChoice) SortFields() (string, int, bool) {
 	if n.kind == navigationStream {
@@ -217,8 +233,20 @@ func (a App) searchCatalog(ctx context.Context, query string, kind model.MediaTy
 }
 
 func (a App) LookupStreams(ctx context.Context, imdbID string) ([]model.Stream, error) {
-	fmt.Fprintln(a.Err, "Querying stream addon...")
-	return a.Streams.Streams(ctx, imdbID)
+	fmt.Fprintf(a.Err, "Querying %s...\n", a.Provider)
+	selected, err := a.provider(a.Provider)
+	if err != nil {
+		return nil, err
+	}
+	return selected.Streams(ctx, provider.Request{MediaType: model.Movie, ID: imdbID})
+}
+
+func (a App) provider(id string) (provider.Provider, error) {
+	selected := a.Providers[id]
+	if selected == nil {
+		return nil, fmt.Errorf("unknown provider %q", id)
+	}
+	return selected, nil
 }
 
 func (a App) Cache(ctx context.Context, hashes []string) (map[string]bool, error) {
@@ -273,6 +301,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		choices[i] = navigationChoice{kind: navigationMedia, media: item}
 	}
 	preferences := config.Load()
+	providerID := a.Provider
 	requery := func(searchContext context.Context, query string) ([]navigationChoice, error) {
 		results, err := a.searchCatalog(searchContext, query, "")
 		if err != nil {
@@ -287,9 +316,13 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 	_, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
 		switch selected.kind {
 		case navigationMedia:
+			selectedProvider, err := a.provider(providerID)
+			if err != nil {
+				return nil, err
+			}
 			if selected.media.Type == model.Movie {
-				streams, streamErr := a.Streams.Streams(ctx, selected.media.ID)
-				return a.prepareStreams(ctx, selected.media, streams, streamErr)
+				streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Movie, ID: selected.media.ID})
+				return streamChoices(selected.media, streams, streamErr)
 			}
 			episodes, err := a.Catalog.Episodes(ctx, selected.media.ID)
 			if err != nil {
@@ -321,30 +354,32 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			}
 			return result, nil
 		case navigationEpisode:
-			streams, streamErr := a.Streams.SeriesStreams(ctx, selected.episode.ID)
-			for i := range streams {
-				streams[i].Season = selected.episode.Season
-				streams[i].Episode = selected.episode.Episode
+			selectedProvider, err := a.provider(providerID)
+			if err != nil {
+				return nil, err
 			}
-			return a.prepareStreams(ctx, selected.media, streams, streamErr)
+			streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Series, ID: selected.episode.ID, Season: selected.episode.Season, Episode: selected.episode.Episode})
+			return streamChoices(selected.media, streams, streamErr)
 		default:
 			return nil, fmt.Errorf("item cannot be opened")
 		}
 	}, selector.BrowserOptions[navigationChoice]{
-		InitialTitle:     initialTitle,
-		InitialQuery:     initialQuery,
-		ParentGroups:     parentGroups,
-		SearchGroups:     []string{string(model.Movie), string(model.Series)},
-		PreferredGroup:   preferences.MediaTab,
-		PreferredQuality: preferences.Quality,
-		PreferredCached:  preferences.CachedOnly,
-		PreferredPlayer:  preferences.Player,
-		PreferredModes:   preferences.DetailModes,
+		InitialTitle:      initialTitle,
+		InitialQuery:      initialQuery,
+		ParentGroups:      parentGroups,
+		SearchGroups:      []string{string(model.Movie), string(model.Series)},
+		PreferredGroup:    preferences.MediaTab,
+		PreferredQuality:  preferences.Quality,
+		PreferredCached:   preferences.CachedOnly,
+		PreferredProvider: providerID,
+		PreferredPlayer:   preferences.Player,
+		Providers:         a.ProviderNames,
+		PreferredModes:    preferences.DetailModes,
 		ModeOptions: map[string][]selector.ContextMode{
 			"media":   {{Key: "y", Name: "Year"}, {Key: "r", Name: "Rating"}, {Key: "i", Name: "ID"}, {Key: "t", Name: "Type"}},
 			"season":  {{Key: "e", Name: "Episodes"}},
 			"episode": {{Key: "a", Name: "Air date"}, {Key: "r", Name: "Rating"}, {Key: "i", Name: "ID"}},
-			"stream":  {{Key: "q", Name: "Quality"}, {Key: "c", Name: "Cached"}, {Key: "z", Name: "Size"}, {Key: "s", Name: "Seeders"}, {Key: "o", Name: "Source"}, {Key: "f", Name: "Filename"}},
+			"stream":  {{Key: "q", Name: "Quality"}, {Key: "c", Name: "Availability"}, {Key: "z", Name: "Size"}, {Key: "s", Name: "Seeders"}, {Key: "o", Name: "Source"}, {Key: "f", Name: "Filename"}},
 		},
 		ChildTitle: func(selected navigationChoice) string {
 			switch selected.kind {
@@ -352,11 +387,11 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 				if selected.media.Type == model.Series {
 					return "Seasons"
 				}
-				return "Torrents"
+				return "Streams"
 			case navigationSeason:
 				return "Episodes"
 			default:
-				return "Torrents"
+				return "Streams"
 			}
 		},
 		SaveGroup: func(group string) error {
@@ -369,6 +404,14 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		},
 		SaveCached: func(cachedOnly bool) error {
 			preferences.CachedOnly = &cachedOnly
+			return config.Save(preferences)
+		},
+		SaveProvider: func(selected string) error {
+			if _, err := a.provider(selected); err != nil {
+				return err
+			}
+			providerID = selected
+			preferences.Provider = selected
 			return config.Save(preferences)
 		},
 		SavePlayer: func(player string) error {
@@ -392,14 +435,18 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			return config.Save(preferences)
 		},
 		Play: func(playContext context.Context, selected navigationChoice) error {
-			resolved, err := a.TorBox.ResolveFile(playContext, selected.stream.Hash, selected.stream.FileIndex, selected.stream.Filename, selected.stream.Season, selected.stream.Episode)
+			streamProvider, err := a.provider(selected.stream.Provider)
+			if err != nil {
+				return err
+			}
+			playback, err := streamProvider.Resolve(playContext, selected.stream)
 			if err != nil {
 				return err
 			}
 			if err := config.RecordHistory(config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}); err != nil {
 				return fmt.Errorf("record history: %w", err)
 			}
-			if err := a.Player.Play(playContext, resolved); err != nil {
+			if err := a.Player.Play(playContext, playback); err != nil {
 				if playContext.Err() != nil {
 					return playContext.Err()
 				}
@@ -427,30 +474,13 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 	return nil
 }
 
-func (a App) prepareStreams(ctx context.Context, media model.Media, streams []model.Stream, streamErr error) ([]navigationChoice, error) {
+func streamChoices(media model.Media, streams []model.Stream, streamErr error) ([]navigationChoice, error) {
 	if streamErr != nil {
 		return nil, streamErr
-	}
-	if a.TorBox.Token == "" {
-		return nil, fmt.Errorf("TORBOX_API_TOKEN is required")
 	}
 	if len(streams) == 0 {
 		return nil, fmt.Errorf("no playable streams found")
 	}
-	hashes := make([]string, len(streams))
-	for i := range streams {
-		hashes[i] = streams[i].Hash
-	}
-	cacheCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	cached, err := a.TorBox.Cached(cacheCtx, hashes)
-	if err != nil {
-		return nil, err
-	}
-	for i := range streams {
-		streams[i].Cached = cached[streams[i].Hash]
-	}
-	stremio.Rank(streams)
 	result := make([]navigationChoice, len(streams))
 	for i, stream := range streams {
 		result[i] = navigationChoice{kind: navigationStream, media: media, stream: stream}

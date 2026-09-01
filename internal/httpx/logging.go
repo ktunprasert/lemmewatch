@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path"
+	"strings"
 	"time"
 )
 
@@ -30,13 +32,24 @@ func (t LoggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if output == nil {
 		output = io.Discard
 	}
-	target := req.URL.Host + req.URL.EscapedPath()
+	target := req.URL.Host + safePath(req.URL.EscapedPath())
 	if err != nil {
 		fmt.Fprintf(output, "HTTP %s %s failed after %s: %s\n", req.Method, target, time.Since(started).Round(time.Millisecond), Failure(err))
 		return nil, err
 	}
 	fmt.Fprintf(output, "HTTP %s %s -> %d in %s\n", req.Method, target, res.StatusCode, time.Since(started).Round(time.Millisecond))
 	return res, nil
+}
+
+func safePath(value string) string {
+	if index := strings.LastIndex(value, "/stream/"); index >= 0 {
+		return value[index:]
+	}
+	base := path.Base(value)
+	if base == "." || base == "/" {
+		return "/"
+	}
+	return "/" + base
 }
 
 func Failure(err error) string {

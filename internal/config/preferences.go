@@ -10,6 +10,7 @@ type Preferences struct {
 	Quality     int               `json:"quality,omitempty"`
 	MediaTab    string            `json:"media_tab,omitempty"`
 	CachedOnly  *bool             `json:"cached_only,omitempty"`
+	Provider    string            `json:"provider,omitempty"`
 	Player      string            `json:"player,omitempty"`
 	DetailModes map[string]string `json:"detail_modes,omitempty"`
 }

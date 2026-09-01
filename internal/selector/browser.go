@@ -15,31 +15,41 @@ import (
 )
 
 type BrowserOptions[T item] struct {
-	InitialTitle     string
-	InitialQuery     string
-	ParentGroups     []string
-	PreferredGroup   string
-	PreferredQuality int
-	PreferredCached  *bool
-	PreferredPlayer  string
-	PreferredModes   map[string]string
-	ModeOptions      map[string][]ContextMode
-	SaveGroup        func(string) error
-	SaveQuality      func(int) error
-	SaveCached       func(bool) error
-	SavePlayer       func(string) error
-	SaveMode         func(string, string) error
-	ChildTitle       func(T) string
-	Play             func(context.Context, T) error
-	Requery          func(context.Context, string) ([]T, error)
-	History          func(context.Context) ([]T, error)
-	SearchGroups     []string
+	InitialTitle      string
+	InitialQuery      string
+	ParentGroups      []string
+	PreferredGroup    string
+	PreferredQuality  int
+	PreferredCached   *bool
+	PreferredProvider string
+	PreferredPlayer   string
+	Providers         []string
+	PreferredModes    map[string]string
+	ModeOptions       map[string][]ContextMode
+	SaveGroup         func(string) error
+	SaveQuality       func(int) error
+	SaveCached        func(bool) error
+	SaveProvider      func(string) error
+	SavePlayer        func(string) error
+	SaveMode          func(string, string) error
+	ChildTitle        func(T) string
+	Play              func(context.Context, T) error
+	Requery           func(context.Context, string) ([]T, error)
+	History           func(context.Context) ([]T, error)
+	SearchGroups      []string
 }
 
 type groupedItem interface{ Group() string }
 type terminalItem interface{ Terminal() bool }
 type streamItem interface {
-	StreamInfo() (cached bool, quality int, ok bool)
+	StreamInfo() (StreamInfo, bool)
+}
+
+type StreamInfo struct {
+	Quality         int
+	Cached          bool
+	CacheApplicable bool
+	Playable        bool
 }
 type sortableItem interface {
 	SortFields() (name string, year int, ok bool)
@@ -82,9 +92,11 @@ type visiblePane[T item] struct {
 }
 
 type loaded[T item] struct {
-	items []T
-	err   error
-	key   string
+	items    []T
+	err      error
+	key      string
+	provider string
+	loadID   uint64
 }
 
 type playFinished struct{ err error }
@@ -142,6 +154,7 @@ type browserModel[T item] struct {
 	settingsMenu      bool
 	settingsIndex     int
 	player            string
+	provider          string
 	customPlayer      bool
 	customPlayerValue string
 	pendingG          bool
@@ -156,6 +169,7 @@ type browserModel[T item] struct {
 	playing           bool
 	stopPlaying       context.CancelFunc
 	loadCache         map[string][]T
+	loadID            uint64
 }
 
 var (
@@ -188,6 +202,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.width = max(40, msg.Width)
 		m.height = max(8, msg.Height)
 	case loaded[T]:
+		if msg.provider != m.provider || msg.loadID != m.loadID {
+			break
+		}
 		m.loading = false
 		m.err = msg.err
 		m.right.items = msg.items
@@ -341,7 +358,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 				}
 			}
 		case "c":
-			if m.focusRight && m.rightHasStreams() {
+			if m.focusRight && m.rightHasStreams() && m.rightCacheApplicable() {
 				m.cachedOnly = !m.cachedOnly
 				m.right.index = 0
 				m.notice = ""
@@ -490,15 +507,15 @@ func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.settingsMenu = false
 	case "up", "k":
-		m.settingsIndex = clamp(m.settingsIndex-1, 8)
+		m.settingsIndex = clamp(m.settingsIndex-1, 9)
 	case "down", "j":
-		m.settingsIndex = clamp(m.settingsIndex+1, 8)
+		m.settingsIndex = clamp(m.settingsIndex+1, 9)
 	case "left", "h":
 		m.changeSetting(-1)
 	case "right", "l":
 		m.changeSetting(1)
 	case "enter":
-		if m.settingsIndex == 3 {
+		if m.settingsIndex == 4 {
 			m.customPlayer = true
 			m.customPlayerValue = m.player
 			if m.player == "mpv" || m.player == "vlc" {
@@ -540,6 +557,25 @@ func (m *browserModel[T]) changeSetting(delta int) {
 			m.saveSetting(m.options.SaveCached(m.cachedOnly))
 		}
 	case 3:
+		if len(m.options.Providers) == 0 {
+			return
+		}
+		index := 0
+		for i, provider := range m.options.Providers {
+			if provider == m.provider {
+				index = i
+			}
+		}
+		m.provider = m.options.Providers[wrapIndex(index+delta, len(m.options.Providers))]
+		m.right = pane[T]{}
+		m.focusRight = false
+		m.loading = false
+		m.loadCache = nil
+		m.loadID++
+		if m.options.SaveProvider != nil {
+			m.saveSetting(m.options.SaveProvider(m.provider))
+		}
+	case 4:
 		players := []string{"", "mpv", "vlc"}
 		index := 0
 		for i, player := range players {
@@ -556,7 +592,7 @@ func (m *browserModel[T]) changeSetting(delta int) {
 			m.saveSetting(m.options.SavePlayer(m.player))
 		}
 	default:
-		group := settingModeGroups[m.settingsIndex-4]
+		group := settingModeGroups[m.settingsIndex-5]
 		modes := m.options.ModeOptions[group]
 		if len(modes) == 0 {
 			return
@@ -812,9 +848,9 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 		selected := items[m.right.index].item
 		if terminal, ok := any(selected).(terminalItem); ok && terminal.Terminal() {
 			if stream, ok := any(selected).(streamItem); ok {
-				cached, _, isStream := stream.StreamInfo()
-				if isStream && !cached {
-					m.notice = "Uncached playback is not available yet"
+				info, isStream := stream.StreamInfo()
+				if isStream && !info.Playable {
+					m.notice = "Stream is not playable"
 					return m, nil
 				}
 			}
@@ -851,6 +887,9 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 	key := ""
 	if cacheable, ok := any(selected).(cacheableItem); ok {
 		key = cacheable.CacheKey()
+		if key != "" && m.provider != "" {
+			key = m.provider + ":" + key
+		}
 	}
 	m.right = pane[T]{title: m.childTitle(selected)}
 	m.err = nil
@@ -864,9 +903,11 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 		}
 	}
 	m.loading = true
+	m.loadID++
+	loadID := m.loadID
 	return m, func() tea.Msg {
 		items, err := m.load(m.ctx, selected)
-		return loaded[T]{items: items, err: err, key: key}
+		return loaded[T]{items: items, err: err, key: key, provider: m.provider, loadID: loadID}
 	}
 }
 
@@ -995,14 +1036,14 @@ func (m browserModel[T]) filteredRight() []indexed[T] {
 	result := items[:0]
 	for _, value := range items {
 		stream, ok := any(value.item).(streamItem)
-		cached, quality, isStream := false, 0, false
+		info, isStream := StreamInfo{}, false
 		if ok {
-			cached, quality, isStream = stream.StreamInfo()
+			info, isStream = stream.StreamInfo()
 		}
-		if isStream && m.cachedOnly && !cached {
+		if isStream && info.CacheApplicable && m.cachedOnly && !info.Cached {
 			continue
 		}
-		if isStream && m.quality != 0 && quality != m.quality {
+		if isStream && m.quality != 0 && info.Quality != m.quality {
 			continue
 		}
 		result = append(result, value)
@@ -1014,20 +1055,20 @@ func (m browserModel[T]) filteredRight() []indexed[T] {
 			if !leftOK || !rightOK {
 				return false
 			}
-			leftCached, leftQuality, leftIsStream := leftStream.StreamInfo()
-			rightCached, rightQuality, rightIsStream := rightStream.StreamInfo()
+			leftInfo, leftIsStream := leftStream.StreamInfo()
+			rightInfo, rightIsStream := rightStream.StreamInfo()
 			if !leftIsStream || !rightIsStream {
 				return false
 			}
 			switch m.streamSort {
 			case sortQualityAscending:
-				return leftQuality < rightQuality
+				return leftInfo.Quality < rightInfo.Quality
 			case sortQualityDescending:
-				return leftQuality > rightQuality
+				return leftInfo.Quality > rightInfo.Quality
 			case sortCachedFirst:
-				return leftCached && !rightCached
+				return leftInfo.CacheApplicable && rightInfo.CacheApplicable && leftInfo.Cached && !rightInfo.Cached
 			case sortUncachedFirst:
-				return !leftCached && rightCached
+				return leftInfo.CacheApplicable && rightInfo.CacheApplicable && !leftInfo.Cached && rightInfo.Cached
 			case sortNameAscending, sortNameDescending:
 				leftSortable, leftOK := any(result[i].item).(sortableItem)
 				rightSortable, rightOK := any(result[j].item).(sortableItem)
@@ -1078,15 +1119,19 @@ func (m browserModel[T]) View() string {
 	}
 	rightTitle := m.right.title
 	if m.rightHasStreams() {
-		cacheLabel := "Cached"
-		if !m.cachedOnly {
-			cacheLabel = "All"
-		}
 		qualityLabel := "All qualities"
 		if m.quality > 0 {
 			qualityLabel = fmt.Sprintf("%dp", m.quality)
 		}
-		rightTitle = fmt.Sprintf("Torrents  [%s]  [%s]", cacheLabel, qualityLabel)
+		if m.rightCacheApplicable() {
+			cacheLabel := "Cached"
+			if !m.cachedOnly {
+				cacheLabel = "All"
+			}
+			rightTitle = fmt.Sprintf("Streams  [%s]  [%s]", cacheLabel, qualityLabel)
+		} else {
+			rightTitle = fmt.Sprintf("Streams  [%s]", qualityLabel)
+		}
 	}
 	if rightTitle != "" || len(m.right.items) > 0 || m.loading || m.err != nil {
 		panes = append(panes, visiblePane[T]{title: rightTitle, items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading, err: m.err})
@@ -1106,7 +1151,7 @@ func (m browserModel[T]) View() string {
 	}
 	if m.focusRight {
 		helpText = "h/l focus  j/k move  enter open/select  / filter  esc back"
-		if m.rightHasStreams() {
+		if m.rightHasStreams() && m.rightCacheApplicable() {
 			helpText = "c cached/all  v quality  " + helpText
 		}
 	}
@@ -1221,7 +1266,7 @@ func sortModal(torrents bool) string {
 	}
 	if torrents {
 		lines = []string{
-			headerStyle.Render("Sort torrents"),
+			headerStyle.Render("Sort streams"),
 			"q   Quality ascending",
 			"Q   Quality descending",
 			"c   Cached first",
@@ -1286,14 +1331,18 @@ func (m browserModel[T]) settingsModal() string {
 	}
 	cached := "Cached only"
 	if !m.cachedOnly {
-		cached = "All torrents"
+		cached = "All streams"
 	}
 	player := m.player
 	if player == "" {
 		player = "System default"
 	}
-	values := []string{group, quality, cached, player}
-	labels := []string{"Media type", "Quality", "Availability", "Player"}
+	provider := m.provider
+	if provider == "" {
+		provider = "Default"
+	}
+	values := []string{group, quality, cached, provider, player}
+	labels := []string{"Media type", "Quality", "Availability", "Provider", "Player"}
 	for _, modeGroup := range settingModeGroups {
 		modes := m.options.ModeOptions[modeGroup]
 		value := "Default"
@@ -1363,8 +1412,20 @@ func overlayAt(baseLines, modalLines []string, width, x, y int) string {
 func (m browserModel[T]) rightHasStreams() bool {
 	for _, value := range m.right.items {
 		if stream, ok := any(value).(streamItem); ok {
-			_, _, isStream := stream.StreamInfo()
+			_, isStream := stream.StreamInfo()
 			if isStream {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (m browserModel[T]) rightCacheApplicable() bool {
+	for _, value := range m.right.items {
+		if stream, ok := any(value).(streamItem); ok {
+			info, isStream := stream.StreamInfo()
+			if isStream && info.CacheApplicable {
 				return true
 			}
 		}
@@ -1509,7 +1570,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 	if options.PreferredCached != nil {
 		cachedOnly = *options.PreferredCached
 	}
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, player: options.PreferredPlayer, activeQuery: options.InitialQuery, width: 100, height: 24}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, width: 100, height: 24}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

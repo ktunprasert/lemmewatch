@@ -1,11 +1,11 @@
 # Lemmewatch
 
 Local-first CLI/TUI for finding and streaming movies through Stremio-compatible
-catalog and stream addons, TorBox, and a local media player.
+catalog and stream addons, WebStreamr or TorBox, and a local media player.
 
 > [!IMPORTANT]
 > Lemmewatch is an unofficial project and is not affiliated with or endorsed by
-> TorBox, Stremio, Cinemeta, or Torrentio. It does not provide media. Users are
+> TorBox, Stremio, Cinemeta, Torrentio, or WebStreamr. It does not provide media. Users are
 > responsible for complying with applicable laws and third-party service terms.
 
 https://github.com/user-attachments/assets/a2cc832c-c799-4c26-8949-418951656481
@@ -19,16 +19,26 @@ mise install
 mise exec -- go build ./cmd/lemmewatch
 ```
 
-Set `TORBOX_API_TOKEN` in ignored `.mise.local.toml` for cache and playback
-operations. An ignored `.env` file is also loaded at startup; existing process
-environment variables take precedence. Optional configuration:
+Set `TORBOX_API_TOKEN` in ignored `.mise.local.toml` to use Torrentio with
+TorBox cache and playback. Without a token, WebStreamr is selected automatically
+and requires no account or API key. An ignored `.env` file is also loaded at
+startup; existing process environment variables take precedence. Optional
+configuration:
 
 ```text
 LEMMEWATCH_CATALOG_URL
 LEMMEWATCH_STREAM_URL
+LEMMEWATCH_WEBSTREAMR_URL
+LEMMEWATCH_PROVIDER
 TORBOX_API_URL
 LEMMEWATCH_PLAYER
 ```
+
+`LEMMEWATCH_PROVIDER` accepts `torbox` or `webstreamr` and overrides the saved
+provider preference. `LEMMEWATCH_STREAM_URL` configures Torrentio for TorBox.
+`LEMMEWATCH_WEBSTREAMR_URL` configures WebStreamr. Without an override or valid
+saved preference, Lemmewatch selects TorBox if a token exists and WebStreamr
+otherwise.
 
 `LEMMEWATCH_PLAYER` overrides URL opening. By default, Lemmewatch uses
 `xdg-open` on Linux and `open` on macOS so resolved video URLs open with the
@@ -39,8 +49,9 @@ player.
 Open `?`, select **Settings**, then press Enter to edit saved defaults under
 the user's config directory. Up/Down selects a setting; Left/Right cycles media
 type, quality, cached-only filtering, player, and pane detail modes. Enter on
-Player accepts a custom executable. `LEMMEWATCH_PLAYER` takes precedence over
-the saved player preference.
+Provider cycles available playback providers. Player accepts a custom
+executable. `LEMMEWATCH_PLAYER` takes precedence over the saved player
+preference.
 
 Player settings may include arguments, for example `mpv.exe --no-border` or
 `"C:\\Program Files\\mpv\\mpv.exe" --no-border`. Commands are parsed into
@@ -69,11 +80,15 @@ method, host/path, status, duration, and failure class. Player output is hidden
 by default. Query strings are omitted because TorBox URLs may contain tokens.
 
 Bare query and `watch` run movie and series flows. Series traversal adds season
-and episode panes before torrent selection. Selected cached streams resolve
-through TorBox and launch the configured player.
+and episode panes before stream selection. TorBox candidates resolve through
+TorBox; WebStreamr extractor URLs launch directly in the configured player.
 
 For multi-file season packs, addon filename metadata selects the matching TorBox
 file before season/episode pattern matching or legacy index fallback.
+
+WebStreamr streams may be non-seekable or temporarily unavailable because their
+HTTP sources change independently. Streams requiring custom request headers are
+currently unavailable; player-specific header forwarding remains future work.
 
 Interactive watch uses adaptive navigation panes. Wide terminals show up to
 three latest navigation panes at a `1:1:2`
@@ -86,9 +101,10 @@ Movie/Series group and are mirrored in the terminal title.
 `gg` moves to the first item and `G` moves to the last. `Esc` clears an active
 pane filter before navigating back.
 While filtering, Ctrl-W clears a word and Ctrl-U clears the line. In the torrent
-pane, `c` toggles cached/all and `v` cycles quality; quality preference persists
+pane, `c` toggles cached/all for TorBox and `v` cycles quality; quality preference persists
 under the XDG config directory. The active Movie/Series tab persists there too.
-Uncached playback is not implemented yet.
+Uncached TorBox playback is not implemented yet. Cache filtering does not apply
+to direct WebStreamr streams.
 
 Playback leaves the browser open. Press `s` to stop a directly managed player,
 or navigate back through episodes and titles while it runs. Native `open`,
@@ -98,19 +114,19 @@ the browser. History starts as a single root pane without movie/series tabs;
 opening titles uses the same season, episode, torrent, and playback flow.
 Press `Ctrl-H` from search or History to open the History root. Press `Ctrl-P`
 from either root to run a new movie/series search and restore its tabs.
-Episode torrent results are cached for the current browser session. Press `r`
-on an episode or its torrent pane to refresh provider and cache-status results.
+Episode stream results are cached per provider for the current browser session.
+Press `r` on an episode or its stream pane to refresh provider results.
 Right/`l` opens the active left item when its child pane is not loaded; only `q`
 exits the browser.
 
 At the root, `s` opens a sort-key menu: `a`/`A` sorts title ascending/descending,
 `y`/`Y` sorts year ascending/descending, and `d` or `r` restores Cinemeta
-relevance. In the torrent pane, `s` offers quality, cache status, name, and
+relevance. In the stream pane, `s` offers quality, cache status, name, and
 default ranking sorts. `x` stops directly managed playback.
 
 Each list row uses a left-aligned name and right-aligned contextual detail.
 Press `m` for pane-specific modes: media year/rating/ID/type, season episode count,
-episode air date/rating/ID, and torrent quality/cache/size/seeders/source/filename.
+episode air date/rating/ID, and stream quality/cache/size/seeders/source/filename.
 Year, quality, and cache sorting automatically select their matching mode.
 Episodes with future air dates use muted text to indicate that they may not be
 available yet.
@@ -120,7 +136,8 @@ binding.
 Errors and short status notifications appear as bottom-right toasts and dismiss
 automatically without animation.
 
-Temporary TorBox download URLs and API tokens are never printed. `resolve`
+Temporary playback URLs and API tokens are never printed. `cache HASH...` and
+`play HASH` remain TorBox-specific diagnostics. `resolve`
 command from OCaml prototype is intentionally omitted because printing resolved
 URL can expose credentials.
 

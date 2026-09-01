@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"unicode"
+
+	"lemmewatch/internal/model"
 )
 
 type Player struct {
@@ -20,11 +22,14 @@ type Player struct {
 	ConfigError error
 }
 
-func (p Player) Play(ctx context.Context, resolvedURL string) error {
+func (p Player) Play(ctx context.Context, playback model.Playback) error {
 	if p.ConfigError != nil {
 		return fmt.Errorf("player configuration: %w", p.ConfigError)
 	}
-	arguments := append(append([]string(nil), p.Arguments...), resolvedURL)
+	if len(playback.Headers) > 0 {
+		return errors.New("player request headers are not supported")
+	}
+	arguments := append(append([]string(nil), p.Arguments...), playback.URL)
 	cmd := exec.CommandContext(ctx, p.Executable, arguments...)
 	stdout, stderr := p.Stdout, p.Stderr
 	quiet := p.Verbose != nil && !*p.Verbose

@@ -18,6 +18,7 @@ import (
 	"lemmewatch/internal/httpx"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
+	"lemmewatch/internal/provider"
 	"lemmewatch/internal/stremio"
 	"lemmewatch/internal/torbox"
 )
@@ -28,7 +29,8 @@ func New() *cobra.Command {
 	a := configuredApp(&verbose)
 	root := &cobra.Command{
 		Use: "lemmewatch [QUERY...]", Short: "Find and stream media", Version: buildinfo.Commit, SilenceUsage: true, SilenceErrors: true,
-		Args: cobra.ArbitraryArgs,
+		Args:              cobra.ArbitraryArgs,
+		PersistentPreRunE: func(*cobra.Command, []string) error { return a.ValidateProvider() },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if forcedQuery != "" {
 				return a.Watch(cmd.Context(), forcedQueryText(forcedQuery, args))
@@ -63,6 +65,32 @@ func configuredApp(verbose *bool) app.App {
 	defaultPlayerConfig := player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose}
 	var playerConfigError error
 	preferences := config.Load()
+	torboxClient := torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: env("TORBOX_API_TOKEN", buildinfo.DefaultTorboxAPIToken), HTTP: torboxHTTP}
+	torrentioClient := stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient}
+	webstreamrClient := stremio.Client{BaseURL: env("LEMMEWATCH_WEBSTREAMR_URL", "https://87d6a6ef6b58-webstreamrmbg.baby-beamup.club"), HTTP: httpClient}
+	providers := map[string]provider.Provider{
+		provider.WebStreamrID: provider.WebStreamr{Client: webstreamrClient},
+		provider.TorBoxID:     provider.TorBox{StreamsClient: torrentioClient, TorBoxClient: torboxClient},
+	}
+	providerNames := []string{provider.WebStreamrID}
+	if torboxClient.Token != "" {
+		providerNames = append([]string{provider.TorBoxID}, providerNames...)
+	}
+	providerID := preferences.Provider
+	if providerID == "" || providers[providerID] == nil {
+		providerID = provider.WebStreamrID
+		if torboxClient.Token != "" {
+			providerID = provider.TorBoxID
+		}
+	}
+	if configured := os.Getenv("LEMMEWATCH_PROVIDER"); configured != "" {
+		providerID = configured
+		providerNames = []string{configured}
+	}
+	var providerError error
+	if providers[providerID] == nil {
+		providerError = fmt.Errorf("invalid LEMMEWATCH_PROVIDER %q", providerID)
+	}
 	if configured := env("LEMMEWATCH_PLAYER", preferences.Player); configured != "" {
 		playerName, playerArguments, playerConfigError = player.ParseCommand(configured)
 		if playerConfigError != nil {
@@ -71,8 +99,11 @@ func configuredApp(verbose *bool) app.App {
 	}
 	return app.App{
 		Catalog:          catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
-		Streams:          stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient},
-		TorBox:           torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: env("TORBOX_API_TOKEN", buildinfo.DefaultTorboxAPIToken), HTTP: torboxHTTP},
+		Providers:        providers,
+		ProviderNames:    providerNames,
+		Provider:         providerID,
+		ProviderError:    providerError,
+		TorBox:           torboxClient,
 		Player:           player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose, ConfigError: playerConfigError},
 		DefaultPlayer:    defaultPlayerConfig,
 		PlayerOverridden: os.Getenv("LEMMEWATCH_PLAYER") != "",
@@ -114,7 +145,7 @@ func streamsCommand(a app.App) *cobra.Command {
 			return err
 		}
 		for _, s := range items {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%d\t%dp\t%d\t%d\t%s\n", s.Hash, s.FileIndex, s.Quality, s.Seeders, s.Size, oneLine(s.Title))
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d\t%t\t%dp\t%d\t%d\t%s\n", s.Provider, s.Hash, s.FileIndex, s.Playable, s.Quality, s.Seeders, s.Size, oneLine(s.Title))
 		}
 		return nil
 	}}
@@ -145,7 +176,7 @@ func playCommand(a app.App) *cobra.Command {
 			return err
 		}
 		fmt.Fprintln(cmd.ErrOrStderr(), "Launching player...")
-		return a.Player.Play(cmd.Context(), u)
+		return a.Player.Play(cmd.Context(), model.Playback{URL: u})
 	}}
 	cmd.Flags().IntVar(&index, "file-index", 0, "video file index")
 	return cmd

@@ -29,3 +29,21 @@ func TestLoggingOmitsQuery(t *testing.T) {
 		t.Fatalf("missing request details: %q", log.String())
 	}
 }
+
+func TestLoggingRedactsConfiguredAddonPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	verbose := true
+	var log bytes.Buffer
+	client := &http.Client{Transport: LoggingTransport{Verbose: &verbose, Output: &log}}
+	res, err := client.Get(server.URL + "/secret-config/stream/movie/tt1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if strings.Contains(log.String(), "secret-config") || !strings.Contains(log.String(), "/stream/movie/tt1.json") {
+		t.Fatalf("configured path log = %q", log.String())
+	}
+}

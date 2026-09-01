@@ -5,11 +5,13 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"lemmewatch/internal/model"
 )
 
 func TestPlayDoesNotExposeURL(t *testing.T) {
 	secret := "https://example.invalid/file?token=very-secret"
-	err := (Player{Executable: "/definitely/missing/player"}).Play(context.Background(), secret)
+	err := (Player{Executable: "/definitely/missing/player"}).Play(context.Background(), model.Playback{URL: secret})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -30,13 +32,20 @@ func TestPlaySuppressesOutputUnlessVerbose(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var output, errors bytes.Buffer
 			p := Player{Executable: "/bin/sh", Arguments: []string{"-c", "printf output; printf error >&2"}, Stdout: &output, Stderr: &errors, Verbose: &test.verbose}
-			if err := p.Play(context.Background(), "https://example.invalid/video"); err != nil {
+			if err := p.Play(context.Background(), model.Playback{URL: "https://example.invalid/video"}); err != nil {
 				t.Fatal(err)
 			}
 			if got := output.String() + errors.String(); got != test.want {
 				t.Fatalf("output = %q", got)
 			}
 		})
+	}
+}
+
+func TestPlayRejectsRequestHeaders(t *testing.T) {
+	err := (Player{Executable: "/bin/true"}).Play(context.Background(), model.Playback{URL: "https://example.invalid/video", Headers: map[string]string{"Referer": "https://example.invalid/"}})
+	if err == nil || !strings.Contains(err.Error(), "headers") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

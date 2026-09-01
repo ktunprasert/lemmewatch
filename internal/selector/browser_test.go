@@ -21,6 +21,8 @@ type testChoice struct {
 	modes       []ContextMode
 	unavailable bool
 	cacheKey    string
+	direct      bool
+	playable    bool
 }
 
 func (c testChoice) ContextModes() []ContextMode { return c.modes }
@@ -30,8 +32,8 @@ func (c testChoice) CacheKey() string            { return c.cacheKey }
 func (c testChoice) Label() string  { return c.label }
 func (c testChoice) Group() string  { return c.group }
 func (c testChoice) Terminal() bool { return c.terminal }
-func (c testChoice) StreamInfo() (bool, int, bool) {
-	return c.cached, c.quality, c.terminal
+func (c testChoice) StreamInfo() (StreamInfo, bool) {
+	return StreamInfo{Cached: c.cached, CacheApplicable: c.terminal && !c.direct, Playable: c.cached || c.playable, Quality: c.quality}, c.terminal
 }
 func (c testChoice) SortFields() (string, int, bool) {
 	return c.label, c.year, !c.terminal
@@ -566,6 +568,62 @@ func TestBrowserFiltersCacheAndQuality(t *testing.T) {
 	}
 }
 
+func TestBrowserKeepsDirectStreamsWhenCachedOnly(t *testing.T) {
+	m := newBrowser(testChoice{label: "parent"})
+	m.focusRight = true
+	m.right.items = []testChoice{{label: "direct", terminal: true, direct: true, playable: true, quality: 1080}}
+	if got := m.filteredRight(); len(got) != 1 {
+		t.Fatalf("direct streams = %#v", got)
+	}
+	played := false
+	m.options.Play = func(context.Context, testChoice) error { played = true; return nil }
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if command == nil {
+		t.Fatal("direct playback did not start")
+	}
+	_, _ = m.Update(command())
+	if !played {
+		t.Fatal("direct stream was not played")
+	}
+}
+
+func TestProviderSettingClearsLoadedStreams(t *testing.T) {
+	m := newBrowser(testChoice{label: "episode"})
+	m.provider = "torbox"
+	m.options.Providers = []string{"torbox", "webstreamr"}
+	m.right = pane[testChoice]{items: []testChoice{{label: "cached", terminal: true, cached: true}}}
+	m.focusRight = true
+	m.loadCache = map[string][]testChoice{"torbox:streams:episode": m.right.items}
+	m.settingsIndex = 3
+	m.changeSetting(1)
+	if m.provider != "webstreamr" || len(m.right.items) != 0 || m.loadCache != nil || m.focusRight {
+		t.Fatalf("provider switch state = %#v", m)
+	}
+}
+
+func TestStaleProviderLoadIsIgnored(t *testing.T) {
+	m := newBrowser(testChoice{label: "episode"})
+	m.provider = "webstreamr"
+	m.loading = true
+	next, _ := m.Update(loaded[testChoice]{items: []testChoice{{label: "TorBox stream"}}, provider: "torbox"})
+	m = next.(browserModel[testChoice])
+	if len(m.right.items) != 0 {
+		t.Fatalf("stale results = %#v", m.right.items)
+	}
+}
+
+func TestStaleLoadGenerationIsIgnored(t *testing.T) {
+	m := newBrowser(testChoice{label: "episode"})
+	m.provider = "webstreamr"
+	m.loadID = 2
+	next, _ := m.Update(loaded[testChoice]{items: []testChoice{{label: "old stream"}}, provider: "webstreamr", loadID: 1})
+	m = next.(browserModel[testChoice])
+	if len(m.right.items) != 0 {
+		t.Fatalf("stale results = %#v", m.right.items)
+	}
+}
+
 func TestBrowserSortsTorrentResults(t *testing.T) {
 	m := newBrowser(testChoice{label: "parent"})
 	m.focusRight = true
@@ -813,7 +871,7 @@ func TestSettingsCyclesAndPersistsDefaults(t *testing.T) {
 	m.options.SaveMode = func(savedGroup, value string) error { mode = value; group = savedGroup; return nil }
 	m.settingsMenu = true
 
-	for _, index := range []int{0, 1, 2, 4} {
+	for _, index := range []int{0, 1, 2, 5} {
 		m.settingsIndex = index
 		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 		m = next.(browserModel[testChoice])
@@ -826,7 +884,7 @@ func TestSettingsCyclesAndPersistsDefaults(t *testing.T) {
 func TestSettingsAcceptsCustomPlayer(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
 	m.settingsMenu = true
-	m.settingsIndex = 3
+	m.settingsIndex = 4
 	var saved string
 	m.options.SavePlayer = func(value string) error { saved = value; return nil }
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})

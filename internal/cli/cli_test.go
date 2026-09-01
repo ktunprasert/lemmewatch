@@ -114,6 +114,69 @@ func TestConfiguredAppPrefersEnvironmentTorboxToken(t *testing.T) {
 	}
 }
 
+func TestConfiguredAppSelectsWebStreamrWithoutTorBoxToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("TORBOX_API_TOKEN", "")
+	t.Setenv("LEMMEWATCH_PROVIDER", "")
+	original := buildinfo.DefaultTorboxAPIToken
+	buildinfo.DefaultTorboxAPIToken = ""
+	t.Cleanup(func() { buildinfo.DefaultTorboxAPIToken = original })
+
+	got := configuredApp(new(bool))
+	if got.Provider != "webstreamr" || got.Providers[got.Provider] == nil {
+		t.Fatalf("provider = %q, providers = %#v", got.Provider, got.ProviderNames)
+	}
+}
+
+func TestConfiguredAppSelectsTorBoxWhenTokenExists(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("TORBOX_API_TOKEN", "token")
+	t.Setenv("LEMMEWATCH_PROVIDER", "")
+	got := configuredApp(new(bool))
+	if got.Provider != "torbox" || got.Providers[got.Provider] == nil {
+		t.Fatalf("provider = %q, providers = %#v", got.Provider, got.ProviderNames)
+	}
+}
+
+func TestConfiguredAppProviderEnvironmentOverridesPreference(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("TORBOX_API_TOKEN", "token")
+	t.Setenv("LEMMEWATCH_PROVIDER", "webstreamr")
+	if err := config.Save(config.Preferences{Provider: "torbox"}); err != nil {
+		t.Fatal(err)
+	}
+	got := configuredApp(new(bool))
+	if got.Provider != "webstreamr" || len(got.ProviderNames) != 1 || got.ProviderNames[0] != "webstreamr" {
+		t.Fatalf("provider = %q, choices = %#v", got.Provider, got.ProviderNames)
+	}
+}
+
+func TestInvalidProviderOverrideFailsClearly(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("LEMMEWATCH_PROVIDER", "typo")
+	cmd := New()
+	cmd.SetArgs([]string{"search", "Dune"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "invalid LEMMEWATCH_PROVIDER") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestTorBoxOverrideRequiresToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("LEMMEWATCH_PROVIDER", "torbox")
+	t.Setenv("TORBOX_API_TOKEN", "")
+	original := buildinfo.DefaultTorboxAPIToken
+	buildinfo.DefaultTorboxAPIToken = ""
+	t.Cleanup(func() { buildinfo.DefaultTorboxAPIToken = original })
+	cmd := New()
+	cmd.SetArgs([]string{"search", "Dune"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "TORBOX_API_TOKEN") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestConfiguredAppUsesPreferredPlayer(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("LEMMEWATCH_PLAYER", "")
