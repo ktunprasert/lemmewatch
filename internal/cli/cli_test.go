@@ -133,7 +133,7 @@ func TestConfiguredAppAddsConfiguredPenguFallback(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("TORBOX_API_TOKEN", "")
 	t.Setenv("LEMMEWATCH_PROVIDER", "")
-	t.Setenv("PENGUPLAY_MANIFEST_URL", "https://pengu.example/secret/manifest.json")
+	t.Setenv("LEMMEWATCH_PENGUPLAY_MANIFEST_URL", "https://pengu.example/secret/manifest.json")
 	original := buildinfo.DefaultTorboxAPIToken
 	buildinfo.DefaultTorboxAPIToken = ""
 	t.Cleanup(func() { buildinfo.DefaultTorboxAPIToken = original })
@@ -147,7 +147,7 @@ func TestConfiguredAppAddsConfiguredPenguFallback(t *testing.T) {
 func TestConfiguredAppSelectsConfiguredPenguOverride(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("LEMMEWATCH_PROVIDER", "pengu")
-	t.Setenv("PENGUPLAY_MANIFEST_URL", "https://pengu.example/secret/manifest.json")
+	t.Setenv("LEMMEWATCH_PENGUPLAY_MANIFEST_URL", "https://pengu.example/secret/manifest.json")
 	got := configuredApp(new(bool))
 	if got.Provider != provider.PenguID || len(got.ProviderNames) != 1 || got.ProviderNames[0] != provider.PenguID {
 		t.Fatalf("provider = %q, choices = %#v", got.Provider, got.ProviderNames)
@@ -157,11 +157,11 @@ func TestConfiguredAppSelectsConfiguredPenguOverride(t *testing.T) {
 func TestPenguOverrideRequiresConfiguredManifest(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("LEMMEWATCH_PROVIDER", "pengu")
-	t.Setenv("PENGUPLAY_MANIFEST_URL", "")
+	t.Setenv("LEMMEWATCH_PENGUPLAY_MANIFEST_URL", "")
 	cmd := New()
 	cmd.SetArgs([]string{"search", "Dune"})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "PENGUPLAY_MANIFEST_URL is required") {
+	if err == nil || !strings.Contains(err.Error(), "LEMMEWATCH_PENGUPLAY_MANIFEST_URL is required") {
 		t.Fatalf("error = %v", err)
 	}
 }

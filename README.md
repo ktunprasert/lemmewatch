@@ -32,20 +32,20 @@ LEMMEWATCH_CATALOG_URL
 LEMMEWATCH_STREAM_URL
 LEMMEWATCH_WEBSTREAMR_URL
 LEMMEWATCH_PROVIDER
-PENGUPLAY_MANIFEST_URL
+LEMMEWATCH_PENGUPLAY_MANIFEST_URL
 TORBOX_API_URL
 LEMMEWATCH_PLAYER
 ```
 
 `LEMMEWATCH_PROVIDER` accepts `torbox`, `webstreamr`, or `pengu` and overrides
 the saved provider preference. Pengu is available only when
-`PENGUPLAY_MANIFEST_URL` contains the configured manifest URL copied after
-signing in at `https://pengu.uk`. This URL contains a bearer credential: keep it
-in ignored local configuration and never publish it. `LEMMEWATCH_STREAM_URL`
-configures Torrentio for TorBox. `LEMMEWATCH_WEBSTREAMR_URL` configures
-WebStreamr. Without an override or valid saved preference, Lemmewatch selects
-TorBox if a token exists and WebStreamr otherwise; Pengu remains a selectable
-fallback.
+`LEMMEWATCH_PENGUPLAY_MANIFEST_URL` contains the configured manifest URL copied
+after signing in at `https://pengu.uk`. This URL contains a bearer credential:
+keep it in ignored local configuration and never publish it.
+`LEMMEWATCH_STREAM_URL` configures Torrentio for TorBox.
+`LEMMEWATCH_WEBSTREAMR_URL` configures WebStreamr. Without an override or valid
+saved preference, Lemmewatch selects TorBox if a token exists and WebStreamr
+otherwise; Pengu remains a selectable fallback.
 
 `LEMMEWATCH_PLAYER` overrides URL opening. By default, Lemmewatch uses
 `xdg-open` on Linux and `open` on macOS so resolved video URLs open with the
