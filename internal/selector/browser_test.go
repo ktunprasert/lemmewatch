@@ -902,7 +902,7 @@ func TestHelpPaletteCanSelectFilterAction(t *testing.T) {
 func TestHelpPaletteOpensSettings(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
 	m.helpMenu = true
-	m.helpFilter = "saved defaults"
+	m.helpFilter = "settings"
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
 	if m.helpMenu || !m.settingsMenu || !strings.Contains(ansi.Strip(m.View()), "Settings") {

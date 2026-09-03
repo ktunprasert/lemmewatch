@@ -738,7 +738,7 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
 		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
 		{keys: "?", label: "Show keybindings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
-		{keys: ";", label: "Change saved defaults", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{';'}}},
+		{keys: ";", label: "Settings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{';'}}},
 		{keys: "q", label: "Quit", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
 	}
 	if len(m.options.ParentGroups) > 1 {
