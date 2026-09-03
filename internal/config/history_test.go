@@ -37,3 +37,26 @@ func TestHistoryMissingFileIsEmpty(t *testing.T) {
 		t.Fatalf("history = %#v", entries)
 	}
 }
+
+func TestHistoryCanToggleAndRemoveTitles(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	entry := HistoryEntry{ID: "tt1", Title: "Dune", Type: "movie"}
+	added, err := ToggleHistory(entry)
+	if err != nil || !added {
+		t.Fatalf("add toggle = %t, %v", added, err)
+	}
+	added, err = ToggleHistory(entry)
+	if err != nil || added {
+		t.Fatalf("remove toggle = %t, %v", added, err)
+	}
+	if err := RecordHistory(entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveHistory(entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := History()
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("history = %#v, %v", entries, err)
+	}
+}

@@ -123,6 +123,8 @@ the browser. History starts as a single root pane without movie/series tabs;
 opening titles uses the same season, episode, torrent, and playback flow.
 Press `Ctrl-H` from search or History to open the History root. Press `Ctrl-P`
 from either root to run a new movie/series search and restore its tabs.
+Press `w` on a root title to add it to or remove it from history. In History,
+press `d` to remove the selected title.
 Episode stream results are cached per provider for the current browser session.
 Press `r` on an episode or its stream pane to refresh provider results.
 Right/`l` opens the active left item when its child pane is not loaded; only `q`

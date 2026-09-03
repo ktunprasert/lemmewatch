@@ -36,6 +36,8 @@ type BrowserOptions[T item] struct {
 	Play              func(context.Context, T) error
 	Requery           func(context.Context, string) ([]T, error)
 	History           func(context.Context) ([]T, error)
+	ToggleHistory     func(context.Context, T) (bool, error)
+	RemoveHistory     func(context.Context, T) error
 	SearchGroups      []string
 }
 
@@ -109,6 +111,11 @@ type historyFinished[T item] struct {
 	items []T
 	err   error
 }
+type historyChanged[T item] struct {
+	items []T
+	added bool
+	err   error
+}
 
 type helpBinding struct {
 	keys  string
@@ -127,6 +134,9 @@ type unavailableItem interface{ Unavailable() bool }
 type cacheableItem interface{ CacheKey() string }
 
 type toastExpired struct{ id uint64 }
+type spinnerTick struct{}
+
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 type browserModel[T item] struct {
 	ctx               context.Context
@@ -138,6 +148,9 @@ type browserModel[T item] struct {
 	groupIndex        int
 	focusRight        bool
 	loading           bool
+	searching         bool
+	historyBusy       bool
+	spinnerFrame      int
 	err               error
 	filtering         bool
 	querying          bool
@@ -233,6 +246,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		}
 	case requeryFinished[T]:
 		m.loading = false
+		m.searching = false
 		if msg.err != nil {
 			m.notice = "Search failed: " + msg.err.Error()
 			break
@@ -258,11 +272,37 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.activeQuery = "History"
 		m.focusRight = false
 		m.notice = ""
+	case historyChanged[T]:
+		m.historyBusy = false
+		if msg.err != nil {
+			m.notice = "History update failed: " + msg.err.Error()
+			break
+		}
+		if m.inHistoryRoot() {
+			m.current().items = msg.items
+			m.current().index = clamp(m.current().index, len(msg.items))
+		}
+		if msg.added {
+			m.notice = "Added to history"
+		} else {
+			m.notice = "Removed from history"
+		}
+	case spinnerTick:
+		if m.searching || m.historyBusy {
+			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+			return m, spinnerCommand()
+		}
 	case toastExpired:
 		if msg.id == m.toastID {
 			m.notice = ""
 		}
 	case tea.KeyMsg:
+		if m.searching || m.historyBusy {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.helpMenu {
 			return m.updateHelp(msg)
 		}
@@ -345,6 +385,29 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 					items, err := m.options.History(m.ctx)
 					return historyFinished[T]{items: items, err: err}
 				}
+			}
+		case "w":
+			if selected, ok := m.selectedRoot(); ok && m.options.ToggleHistory != nil && m.options.History != nil {
+				m.historyBusy = true
+				return m, tea.Batch(func() tea.Msg {
+					added, err := m.options.ToggleHistory(m.ctx, selected)
+					if err != nil {
+						return historyChanged[T]{err: err}
+					}
+					items, err := m.options.History(m.ctx)
+					return historyChanged[T]{items: items, added: added, err: err}
+				}, spinnerCommand())
+			}
+		case "d":
+			if selected, ok := m.selectedRoot(); ok && m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
+				m.historyBusy = true
+				return m, tea.Batch(func() tea.Msg {
+					if err := m.options.RemoveHistory(m.ctx, selected); err != nil {
+						return historyChanged[T]{err: err}
+					}
+					items, err := m.options.History(m.ctx)
+					return historyChanged[T]{items: items, err: err}
+				}, spinnerCommand())
 			}
 		case "tab":
 			if !m.focusRight && len(m.levels) == 1 && len(m.options.ParentGroups) > 1 {
@@ -687,6 +750,12 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 	if m.options.History != nil {
 		bindings = append(bindings, helpBinding{keys: "Ctrl-H", label: "Open history", key: tea.KeyMsg{Type: tea.KeyCtrlH}})
 	}
+	if m.options.ToggleHistory != nil && m.options.History != nil {
+		bindings = append(bindings, helpBinding{keys: "w", label: "Toggle selected title in history", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}})
+	}
+	if m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
+		bindings = append(bindings, helpBinding{keys: "d", label: "Remove selected title from history", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}})
+	}
 	query := strings.ToLower(strings.TrimSpace(m.helpFilter))
 	if query == "" {
 		return bindings
@@ -805,11 +874,13 @@ func (m browserModel[T]) updateQuery(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.querying = false
 		m.loading = true
-		m.notice = "Searching..."
-		return m, func() tea.Msg {
+		m.searching = true
+		m.spinnerFrame = 0
+		m.notice = ""
+		return m, tea.Batch(func() tea.Msg {
 			items, err := m.options.Requery(m.ctx, query)
 			return requeryFinished[T]{items: items, err: err, query: query}
-		}
+		}, spinnerCommand())
 	case "backspace", "ctrl+h":
 		if len(m.query) > 0 {
 			runes := []rune(m.query)
@@ -959,6 +1030,26 @@ func (m *browserModel[T]) move(delta int) {
 	} else {
 		m.current().index = clamp(m.current().index+delta, len(m.filteredCurrent()))
 	}
+}
+
+func (m browserModel[T]) inHistoryRoot() bool {
+	return len(m.levels) == 1 && !m.focusRight && m.activeQuery == "History"
+}
+
+func (m browserModel[T]) selectedRoot() (T, bool) {
+	var zero T
+	if len(m.levels) != 1 || m.focusRight {
+		return zero, false
+	}
+	items := m.filteredCurrent()
+	if len(items) == 0 {
+		return zero, false
+	}
+	return items[clamp(m.current().index, len(items))].item, true
+}
+
+func spinnerCommand() tea.Cmd {
+	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return spinnerTick{} })
 }
 
 func (m *browserModel[T]) current() *pane[T] { return &m.levels[len(m.levels)-1] }
@@ -1133,8 +1224,8 @@ func (m browserModel[T]) View() string {
 			rightTitle = fmt.Sprintf("Streams  [%s]", qualityLabel)
 		}
 	}
-	if rightTitle != "" || len(m.right.items) > 0 || m.loading || m.err != nil {
-		panes = append(panes, visiblePane[T]{title: rightTitle, items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading, err: m.err})
+	if rightTitle != "" || len(m.right.items) > 0 || m.loading && !m.searching || m.err != nil {
+		panes = append(panes, visiblePane[T]{title: rightTitle, items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading && !m.searching, err: m.err})
 	}
 	visible, widths := paneLayout(width, panes)
 	rendered := make([]string, len(visible))
@@ -1157,6 +1248,12 @@ func (m browserModel[T]) View() string {
 	}
 	if m.playing {
 		helpText = "PLAYING  x stop  |  " + helpText
+	}
+	if m.options.ToggleHistory != nil && m.options.History != nil && len(m.levels) == 1 && !m.focusRight {
+		helpText = "w history  " + helpText
+	}
+	if m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
+		helpText = "d remove  " + helpText
 	}
 	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + hintStyle.Render(helpText) + "\n"
 	var modal string
@@ -1183,6 +1280,11 @@ func (m browserModel[T]) View() string {
 	view := base
 	if modal != "" {
 		view = overlay(view, modal, width)
+	}
+	if m.searching {
+		view = overlay(view, activityModal(m.spinnerFrame, "Searching"), width)
+	} else if m.historyBusy {
+		view = overlay(view, activityModal(m.spinnerFrame, "Updating history"), width)
 	}
 	if m.notice != "" {
 		view = toastOverlay(view, m.notice, width)
@@ -1288,6 +1390,10 @@ func inputModal(title, value, help string) string {
 		"",
 		hintStyle.Render(help + "  Ctrl-W word  Ctrl-U line"),
 	}, "\n"))
+}
+
+func activityModal(frame int, label string) string {
+	return activeBorder.Padding(0, 2).Render(spinnerFrames[frame%len(spinnerFrames)] + " " + label)
 }
 
 func (m browserModel[T]) helpModal() string {

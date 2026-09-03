@@ -43,6 +43,14 @@ func newBrowser(items ...testChoice) browserModel[testChoice] {
 	return browserModel[testChoice]{ctx: context.Background(), levels: []pane[testChoice]{{title: "Search", items: items}}, cachedOnly: true}
 }
 
+func runAsync(command tea.Cmd) tea.Msg {
+	message := command()
+	if batch, ok := message.(tea.BatchMsg); ok {
+		return batch[0]()
+	}
+	return message
+}
+
 func TestHistoryRootOmitsSearchAndTabControls(t *testing.T) {
 	m := newBrowser(testChoice{label: "movie"})
 	m.levels[0].title = "History"
@@ -135,7 +143,7 @@ func TestSwitchesBetweenHistoryAndSearchRoots(t *testing.T) {
 	if command == nil || !m.loading {
 		t.Fatal("ctrl-h did not load history")
 	}
-	next, _ = m.Update(command())
+	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
 	if m.levels[0].title != "History" || len(m.options.ParentGroups) != 0 || m.levels[0].items[0].label != "history item" {
 		t.Fatalf("history root = %#v", m)
@@ -788,10 +796,55 @@ func TestBrowserRequeriesRoot(t *testing.T) {
 	if !m.loading || command == nil {
 		t.Fatalf("requery did not start: %#v", m)
 	}
-	next, _ = m.Update(command())
+	view := ansi.Strip(m.View())
+	if !m.searching || !strings.Contains(view, "⠋ Searching") || strings.Contains(view, "Loading...") {
+		t.Fatalf("requery loading view = %q", view)
+	}
+	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
 	if m.loading || len(m.levels) != 1 || m.levels[0].items[0].label != "Silo" || m.focusRight || m.activeQuery != "Silo" {
 		t.Fatalf("requery result = %#v", m)
+	}
+}
+
+func TestBrowserTogglesAndRemovesHistory(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.activeQuery = "Search"
+	historyItems := []testChoice{{label: "Arrival"}}
+	m.options.History = func(context.Context) ([]testChoice, error) {
+		return historyItems, nil
+	}
+	m.options.ToggleHistory = func(_ context.Context, selected testChoice) (bool, error) {
+		return selected.label == "Dune", nil
+	}
+	m.options.RemoveHistory = func(_ context.Context, selected testChoice) error {
+		if selected.label != "Arrival" {
+			t.Fatalf("removed %q", selected.label)
+		}
+		historyItems = nil
+		return nil
+	}
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	m = next.(browserModel[testChoice])
+	if !m.historyBusy || command == nil {
+		t.Fatal("history toggle did not start")
+	}
+	next, _ = m.Update(runAsync(command))
+	m = next.(browserModel[testChoice])
+	if m.historyBusy || m.notice != "Added to history" {
+		t.Fatalf("history toggle = %#v", m)
+	}
+	m.levels[0] = pane[testChoice]{title: "History", items: []testChoice{{label: "Arrival"}}}
+	m.activeQuery = "History"
+	next, command = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m = next.(browserModel[testChoice])
+	if !m.historyBusy || command == nil {
+		t.Fatal("history remove did not start")
+	}
+	next, _ = m.Update(runAsync(command))
+	m = next.(browserModel[testChoice])
+	if m.historyBusy || len(m.current().items) != 0 || m.notice != "Removed from history" {
+		t.Fatalf("history removal = %#v", m)
 	}
 }
 

@@ -467,6 +467,12 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			}
 			return choices, nil
 		},
+		ToggleHistory: func(_ context.Context, selected navigationChoice) (bool, error) {
+			return config.ToggleHistory(config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)})
+		},
+		RemoveHistory: func(_ context.Context, selected navigationChoice) error {
+			return config.RemoveHistory(selected.media.ID)
+		},
 	})
 	if err != nil {
 		return err

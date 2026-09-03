@@ -34,6 +34,31 @@ func RecordHistory(entry HistoryEntry) error {
 	if err != nil {
 		return err
 	}
+	return recordHistory(entries, entry)
+}
+
+func ToggleHistory(entry HistoryEntry) (bool, error) {
+	entries, err := History()
+	if err != nil {
+		return false, err
+	}
+	for _, existing := range entries {
+		if existing.ID == entry.ID {
+			return false, removeHistory(entries, entry.ID)
+		}
+	}
+	return true, recordHistory(entries, entry)
+}
+
+func RemoveHistory(id string) error {
+	entries, err := History()
+	if err != nil {
+		return err
+	}
+	return removeHistory(entries, id)
+}
+
+func recordHistory(entries []HistoryEntry, entry HistoryEntry) error {
 	if entry.PlayedAt.IsZero() {
 		entry.PlayedAt = time.Now().UTC()
 	}
@@ -44,6 +69,16 @@ func RecordHistory(entry HistoryEntry) error {
 		}
 		if len(updated) == 100 {
 			break
+		}
+	}
+	return writeJSON(historyPath(), updated)
+}
+
+func removeHistory(entries []HistoryEntry, id string) error {
+	updated := make([]HistoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.ID != id {
+			updated = append(updated, entry)
 		}
 	}
 	return writeJSON(historyPath(), updated)
