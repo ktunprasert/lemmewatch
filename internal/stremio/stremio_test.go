@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"lemmewatch/internal/model"
 )
 
 func TestStreamsNormalizesDeduplicatesAndRanks(t *testing.T) {
@@ -31,7 +33,7 @@ func TestStreamsNormalizesDeduplicatesAndRanks(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("items = %#v", items)
 	}
-	Rank(items)
+	Rank(items, "", 0, 0)
 	if items[0].Quality != 2160 || items[0].Hash != hashB {
 		t.Fatalf("ranking = %#v", items)
 	}
@@ -43,6 +45,33 @@ func TestStreamsNormalizesDeduplicatesAndRanks(t *testing.T) {
 	}
 	if items[1].Title != "Episode.Release.1080p" {
 		t.Fatalf("title = %q", items[1].Title)
+	}
+}
+
+func TestRankPrioritizesMatchingEpisodeAndDemotesSequelTitle(t *testing.T) {
+	items := []model.Stream{
+		{Title: "From Old Country Bumpkin to Master Swordsman 2160p", Filename: "From.Old.Country.Bumpkin.to.Master.Swordsman.II.01.mkv", Quality: 2160, Cache: model.CacheCached},
+		{Title: "Katainaka no Ossan 01", Quality: 1080, Cache: model.CacheCached},
+		{Title: "From.Old.Country.Bumpkin.to.Master.Swordsman.S01E01", Quality: 720, Cache: model.CacheUncached},
+	}
+
+	Rank(items, "From Old Country Bumpkin to Master Swordsman", 1, 1)
+
+	if items[0].Quality != 720 || items[1].Quality != 1080 || items[2].Quality != 2160 {
+		t.Fatalf("ranking = %#v", items)
+	}
+}
+
+func TestRankUsesTitleAwareAnimeEpisodeMarker(t *testing.T) {
+	items := []model.Stream{
+		{Title: "Series Name E02", Quality: 2160, Cache: model.CacheCached},
+		{Title: "Series Name E01", Quality: 720, Cache: model.CacheUncached},
+	}
+
+	Rank(items, "Series Name", 1, 1)
+
+	if items[0].Title != "Series Name E01" {
+		t.Fatalf("ranking = %#v", items)
 	}
 }
 

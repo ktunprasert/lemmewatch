@@ -22,6 +22,7 @@ const (
 type Request struct {
 	MediaType model.MediaType
 	ID        string
+	Title     string
 	Season    int
 	Episode   int
 }
@@ -76,7 +77,7 @@ func (p TorBox) Streams(ctx context.Context, request Request) ([]model.Stream, e
 			torrents[i].Cache = model.CacheCached
 		}
 	}
-	stremio.Rank(torrents)
+	stremio.Rank(torrents, request.Title, request.Season, request.Episode)
 	return torrents, nil
 }
 

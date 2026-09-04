@@ -321,7 +321,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 				return nil, err
 			}
 			if selected.media.Type == model.Movie {
-				streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Movie, ID: selected.media.ID})
+				streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Movie, ID: selected.media.ID, Title: selected.media.Name})
 				return streamChoices(selected.media, streams, streamErr)
 			}
 			episodes, err := a.Catalog.Episodes(ctx, selected.media.ID)
@@ -358,7 +358,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			if err != nil {
 				return nil, err
 			}
-			streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Series, ID: selected.episode.ID, Season: selected.episode.Season, Episode: selected.episode.Episode})
+			streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Series, ID: selected.episode.ID, Title: selected.media.Name, Season: selected.episode.Season, Episode: selected.episode.Episode})
 			return streamChoices(selected.media, streams, streamErr)
 		default:
 			return nil, fmt.Errorf("item cannot be opened")

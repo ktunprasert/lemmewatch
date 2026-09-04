@@ -17,9 +17,13 @@ import (
 )
 
 var (
-	qualityRE = regexp.MustCompile(`(?i)\b(2160|1080|720|480|360)p\b`)
-	seedersRE = regexp.MustCompile(`(?i)(?:👤|seed(?:ers?)?\s*[:=]?)\s*(\d+)`)
-	sizeRE    = regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s*(GB|MB)\b`)
+	qualityRE       = regexp.MustCompile(`(?i)\b(2160|1080|720|480|360)p\b`)
+	seedersRE       = regexp.MustCompile(`(?i)(?:👤|seed(?:ers?)?\s*[:=]?)\s*(\d+)`)
+	sizeRE          = regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s*(GB|MB)\b`)
+	seasonEpisodeRE = regexp.MustCompile(`(?i)(?:^|[^[:alnum:]])s0*([1-9]\d?)[ ._-]*e0*([1-9]\d{0,2})(?:[^[:alnum:]]|$)`)
+	xEpisodeRE      = regexp.MustCompile(`(?i)(?:^|[^[:alnum:]])0*([1-9]\d?)x0*([1-9]\d{0,2})(?:[^[:alnum:]]|$)`)
+	seasonRE        = regexp.MustCompile(`(?i)(?:^|[^[:alnum:]])season[ ._-]*0*([1-9]\d?)(?:[^[:alnum:]]|$)`)
+	episodeRE       = regexp.MustCompile(`(?i)(?:^|[^[:alnum:]])e0*([1-9]\d{0,2})(?:[^[:alnum:]]|$)`)
 )
 
 type Client struct {
@@ -216,9 +220,13 @@ func size(s string) int64 {
 	return 0
 }
 
-func Rank(streams []model.Stream) {
+func Rank(streams []model.Stream, title string, season, episode int) {
 	sort.SliceStable(streams, func(i, j int) bool {
 		a, b := streams[i], streams[j]
+		aMatch, bMatch := streamMatchRank(a, title, season, episode), streamMatchRank(b, title, season, episode)
+		if aMatch != bMatch {
+			return aMatch < bMatch
+		}
 		if a.Cache != b.Cache {
 			return a.Cache == model.CacheCached
 		}
@@ -236,4 +244,94 @@ func Rank(streams []model.Stream) {
 		}
 		return a.URL < b.URL
 	})
+}
+
+func streamMatchRank(stream model.Stream, title string, wantedSeason, wantedEpisode int) int {
+	if wantedSeason <= 0 || wantedEpisode <= 0 {
+		return 1
+	}
+	text := stream.Filename + " " + stream.Title
+	titleRelation := streamTitleRelation(text, title)
+	if titleRelation < 0 {
+		return 2
+	}
+	foundSeason, foundEpisode := episodeCoordinates(text)
+	if foundSeason > 0 && foundSeason != wantedSeason || foundEpisode > 0 && foundEpisode != wantedEpisode {
+		return 2
+	}
+	if titleRelation > 0 && foundEpisode == wantedEpisode && (foundSeason == 0 || foundSeason == wantedSeason) {
+		return 0
+	}
+	return 1
+}
+
+func episodeCoordinates(value string) (int, int) {
+	for _, pattern := range []*regexp.Regexp{seasonEpisodeRE, xEpisodeRE} {
+		if match := pattern.FindStringSubmatch(value); len(match) > 0 {
+			season, _ := strconv.Atoi(match[1])
+			episode, _ := strconv.Atoi(match[2])
+			return season, episode
+		}
+	}
+	if match := seasonRE.FindStringSubmatch(value); len(match) > 0 {
+		season, _ := strconv.Atoi(match[1])
+		return season, 0
+	}
+	if match := episodeRE.FindStringSubmatch(value); len(match) > 0 {
+		episode, _ := strconv.Atoi(match[1])
+		return 0, episode
+	}
+	return 0, 0
+}
+
+func streamTitleRelation(candidate, title string) int {
+	candidateWords, titleWords := normalizedWords(candidate), normalizedWords(title)
+	if len(titleWords) == 0 || len(candidateWords) < len(titleWords) {
+		return 0
+	}
+	relation := 0
+	for start := 0; start+len(titleWords) <= len(candidateWords); start++ {
+		matched := true
+		for i := range titleWords {
+			if candidateWords[start+i] != titleWords[i] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			relation = 1
+			next := start + len(titleWords)
+			if next < len(candidateWords) && romanNumeral(candidateWords[next]) > 1 {
+				return -1
+			}
+		}
+	}
+	return relation
+}
+
+func normalizedWords(value string) []string {
+	value = strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return ' '
+	}, value)
+	return strings.Fields(value)
+}
+
+func romanNumeral(value string) int {
+	switch value {
+	case "i":
+		return 1
+	case "ii":
+		return 2
+	case "iii":
+		return 3
+	case "iv":
+		return 4
+	case "v":
+		return 5
+	default:
+		return 0
+	}
 }
