@@ -13,6 +13,8 @@ import (
 	"lemmewatch/internal/config"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
+	"lemmewatch/internal/provider"
+	"lemmewatch/internal/torbox"
 )
 
 func TestSearchPreservesCatalogRelevanceWithinMediaType(t *testing.T) {
@@ -105,5 +107,22 @@ func TestApplyPlayerPreferenceRespectsEnvironmentOverride(t *testing.T) {
 	applyPlayerPreference(&active, player.Player{Executable: "xdg-open"}, true, "vlc")
 	if active.Executable != "environment-player" {
 		t.Fatalf("player = %#v", active)
+	}
+}
+
+func TestSetTorBoxTokenUpdatesProviderAndClient(t *testing.T) {
+	a := App{
+		TorBox: torbox.Client{},
+		Providers: map[string]provider.Provider{
+			provider.TorBoxID: provider.TorBox{TorBoxClient: torbox.Client{}},
+		},
+	}
+
+	if err := a.setTorBoxToken("saved-token"); err != nil {
+		t.Fatal(err)
+	}
+	configured := a.Providers[provider.TorBoxID].(provider.TorBox)
+	if a.TorBox.Token != "saved-token" || configured.TorBoxClient.Token != "saved-token" {
+		t.Fatalf("tokens = app %q, provider %q", a.TorBox.Token, configured.TorBoxClient.Token)
 	}
 }

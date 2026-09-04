@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -65,24 +66,28 @@ func configuredApp(verbose *bool) app.App {
 	defaultPlayerConfig := player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose}
 	var playerConfigError error
 	preferences := config.Load()
-	torboxClient := torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: env("TORBOX_API_TOKEN", buildinfo.DefaultTorboxAPIToken), HTTP: torboxHTTP}
+	torboxToken := buildinfo.DefaultTorboxAPIToken
+	if preferences.TorBoxToken != "" {
+		torboxToken = preferences.TorBoxToken
+	}
+	if configured := os.Getenv("TORBOX_API_TOKEN"); configured != "" {
+		torboxToken = configured
+	}
+	torboxClient := torbox.Client{BaseURL: env("TORBOX_API_URL", "https://api.torbox.app/v1/api"), Token: torboxToken, HTTP: torboxHTTP}
 	torrentioClient := stremio.Client{BaseURL: env("LEMMEWATCH_STREAM_URL", "https://torrentio.strem.fun"), HTTP: httpClient}
 	webstreamrClient := stremio.Client{BaseURL: env("LEMMEWATCH_WEBSTREAMR_URL", "https://87d6a6ef6b58-webstreamrmbg.baby-beamup.club"), HTTP: httpClient}
 	providers := map[string]provider.Provider{
 		provider.WebStreamrID: provider.WebStreamr{Client: webstreamrClient},
 		provider.TorBoxID:     provider.TorBox{StreamsClient: torrentioClient, TorBoxClient: torboxClient},
 	}
-	providerNames := []string{provider.WebStreamrID}
+	providerNames := []string{provider.TorBoxID, provider.WebStreamrID}
 	penguURL := os.Getenv("LEMMEWATCH_PENGUPLAY_MANIFEST_URL")
 	if penguURL != "" {
 		providers[provider.PenguID] = provider.Pengu{Client: stremio.Client{BaseURL: penguURL, HTTP: httpClient}}
 		providerNames = append(providerNames, provider.PenguID)
 	}
-	if torboxClient.Token != "" {
-		providerNames = append([]string{provider.TorBoxID}, providerNames...)
-	}
 	providerID := preferences.Provider
-	if providerID == "" || providers[providerID] == nil {
+	if providerID == "" || providers[providerID] == nil || providerID == provider.TorBoxID && torboxClient.Token == "" {
 		providerID = provider.WebStreamrID
 		if torboxClient.Token != "" {
 			providerID = provider.TorBoxID
@@ -107,6 +112,7 @@ func configuredApp(verbose *bool) app.App {
 	return app.App{
 		Catalog:          catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
 		Providers:        providers,
+		ProvidersMu:      &sync.RWMutex{},
 		ProviderNames:    providerNames,
 		Provider:         providerID,
 		ProviderError:    providerError,

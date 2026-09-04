@@ -21,6 +21,7 @@ import (
 type App struct {
 	Catalog          catalog.Client
 	Providers        map[string]provider.Provider
+	ProvidersMu      *sync.RWMutex
 	ProviderNames    []string
 	Provider         string
 	ProviderError    error
@@ -242,11 +243,30 @@ func (a App) LookupStreams(ctx context.Context, imdbID string) ([]model.Stream, 
 }
 
 func (a App) provider(id string) (provider.Provider, error) {
+	if a.ProvidersMu != nil {
+		a.ProvidersMu.RLock()
+		defer a.ProvidersMu.RUnlock()
+	}
 	selected := a.Providers[id]
 	if selected == nil {
 		return nil, fmt.Errorf("unknown provider %q", id)
 	}
 	return selected, nil
+}
+
+func (a *App) setTorBoxToken(token string) error {
+	if a.ProvidersMu != nil {
+		a.ProvidersMu.Lock()
+		defer a.ProvidersMu.Unlock()
+	}
+	selected, ok := a.Providers[provider.TorBoxID].(provider.TorBox)
+	if !ok {
+		return fmt.Errorf("TorBox provider is unavailable")
+	}
+	a.TorBox.Token = token
+	selected.TorBoxClient.Token = token
+	a.Providers[provider.TorBoxID] = selected
+	return nil
 }
 
 func (a App) Cache(ctx context.Context, hashes []string) (map[string]bool, error) {
@@ -413,6 +433,26 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			providerID = selected
 			preferences.Provider = selected
 			return config.Save(preferences)
+		},
+		ProviderNeedsAPIKey: func(selected string) bool {
+			return selected == provider.TorBoxID && a.TorBox.Token == ""
+		},
+		SaveProviderAPIKey: func(selected, key string) error {
+			if selected != provider.TorBoxID {
+				return fmt.Errorf("API key is unsupported for provider %q", selected)
+			}
+			if _, err := a.provider(provider.TorBoxID); err != nil {
+				return err
+			}
+			next := preferences
+			next.Provider = selected
+			next.TorBoxToken = key
+			if err := config.Save(next); err != nil {
+				return err
+			}
+			preferences = next
+			providerID = selected
+			return a.setTorBoxToken(key)
 		},
 		SavePlayer: func(player string) error {
 			nextPlayer := a.Player

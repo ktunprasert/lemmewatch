@@ -15,30 +15,32 @@ import (
 )
 
 type BrowserOptions[T item] struct {
-	InitialTitle      string
-	InitialQuery      string
-	ParentGroups      []string
-	PreferredGroup    string
-	PreferredQuality  int
-	PreferredCached   *bool
-	PreferredProvider string
-	PreferredPlayer   string
-	Providers         []string
-	PreferredModes    map[string]string
-	ModeOptions       map[string][]ContextMode
-	SaveGroup         func(string) error
-	SaveQuality       func(int) error
-	SaveCached        func(bool) error
-	SaveProvider      func(string) error
-	SavePlayer        func(string) error
-	SaveMode          func(string, string) error
-	ChildTitle        func(T) string
-	Play              func(context.Context, T) error
-	Requery           func(context.Context, string) ([]T, error)
-	History           func(context.Context) ([]T, error)
-	ToggleHistory     func(context.Context, T) (bool, error)
-	RemoveHistory     func(context.Context, T) error
-	SearchGroups      []string
+	InitialTitle        string
+	InitialQuery        string
+	ParentGroups        []string
+	PreferredGroup      string
+	PreferredQuality    int
+	PreferredCached     *bool
+	PreferredProvider   string
+	PreferredPlayer     string
+	Providers           []string
+	PreferredModes      map[string]string
+	ModeOptions         map[string][]ContextMode
+	SaveGroup           func(string) error
+	SaveQuality         func(int) error
+	SaveCached          func(bool) error
+	SaveProvider        func(string) error
+	ProviderNeedsAPIKey func(string) bool
+	SaveProviderAPIKey  func(string, string) error
+	SavePlayer          func(string) error
+	SaveMode            func(string, string) error
+	ChildTitle          func(T) string
+	Play                func(context.Context, T) error
+	Requery             func(context.Context, string) ([]T, error)
+	History             func(context.Context) ([]T, error)
+	ToggleHistory       func(context.Context, T) (bool, error)
+	RemoveHistory       func(context.Context, T) error
+	SearchGroups        []string
 }
 
 type groupedItem interface{ Group() string }
@@ -154,50 +156,53 @@ type spinnerTick struct{}
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 type browserModel[T item] struct {
-	ctx               context.Context
-	levels            []pane[T]
-	right             pane[T]
-	load              func(context.Context, T) ([]T, error)
-	options           BrowserOptions[T]
-	crumbs            []string
-	groupIndex        int
-	focusRight        bool
-	loading           bool
-	searching         bool
-	historyBusy       bool
-	spinnerFrame      int
-	err               error
-	filtering         bool
-	querying          bool
-	query             string
-	activeQuery       string
-	sortMenu          bool
-	modeMenu          bool
-	mode              map[string]string
-	sortMode          sortMode
-	streamSort        sortMode
-	helpMenu          bool
-	helpFilter        string
-	helpIndex         int
-	settingsMenu      bool
-	settingsIndex     int
-	player            string
-	provider          string
-	customPlayer      bool
-	customPlayerValue string
-	pendingG          bool
-	cachedOnly        bool
-	quality           int
-	notice            string
-	toastID           uint64
-	width             int
-	height            int
-	chosen            bool
-	choice            T
-	playing           bool
-	stopPlaying       context.CancelFunc
-	loadCache         map[string][]T
-	loadID            uint64
+	ctx                 context.Context
+	levels              []pane[T]
+	right               pane[T]
+	load                func(context.Context, T) ([]T, error)
+	options             BrowserOptions[T]
+	crumbs              []string
+	groupIndex          int
+	focusRight          bool
+	loading             bool
+	searching           bool
+	historyBusy         bool
+	spinnerFrame        int
+	err                 error
+	filtering           bool
+	querying            bool
+	query               string
+	activeQuery         string
+	sortMenu            bool
+	modeMenu            bool
+	mode                map[string]string
+	sortMode            sortMode
+	streamSort          sortMode
+	helpMenu            bool
+	helpFilter          string
+	helpIndex           int
+	settingsMenu        bool
+	settingsIndex       int
+	player              string
+	provider            string
+	customPlayer        bool
+	customPlayerValue   string
+	providerAPIKey      bool
+	providerAPIKeyFor   string
+	providerAPIKeyValue string
+	pendingG            bool
+	cachedOnly          bool
+	quality             int
+	notice              string
+	toastID             uint64
+	width               int
+	height              int
+	chosen              bool
+	choice              T
+	playing             bool
+	stopPlaying         context.CancelFunc
+	loadCache           map[string][]T
+	loadID              uint64
 }
 
 var (
@@ -355,6 +360,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		}
 		if m.customPlayer {
 			return m.updateCustomPlayer(msg)
+		}
+		if m.providerAPIKey {
+			return m.updateProviderAPIKey(msg)
 		}
 		if m.settingsMenu {
 			return m.updateSettings(msg)
@@ -684,15 +692,15 @@ func (m *browserModel[T]) changeSetting(delta int) {
 				index = i
 			}
 		}
-		m.provider = m.options.Providers[wrapIndex(index+delta, len(m.options.Providers))]
-		m.right = pane[T]{}
-		m.focusRight = false
-		m.loading = false
-		m.loadCache = nil
-		m.loadID++
-		if m.options.SaveProvider != nil {
-			m.saveSetting(m.options.SaveProvider(m.provider))
+		selected := m.options.Providers[wrapIndex(index+delta, len(m.options.Providers))]
+		if m.options.ProviderNeedsAPIKey != nil && m.options.ProviderNeedsAPIKey(selected) {
+			m.providerAPIKey = true
+			m.providerAPIKeyFor = selected
+			m.providerAPIKeyValue = ""
+			m.notice = ""
+			return
 		}
+		m.selectProvider(selected, true)
 	case 4:
 		players := []string{"", "mpv", "vlc"}
 		index := 0
@@ -735,6 +743,70 @@ func (m *browserModel[T]) saveSetting(err error) {
 	if err != nil {
 		m.notice = "Could not save preference"
 	}
+}
+
+func (m *browserModel[T]) selectProvider(selected string, save bool) {
+	m.provider = selected
+	m.right = pane[T]{}
+	m.focusRight = false
+	m.loading = false
+	m.loadCache = nil
+	m.loadID++
+	if save && m.options.SaveProvider != nil {
+		m.saveSetting(m.options.SaveProvider(selected))
+	}
+}
+
+func (m browserModel[T]) updateProviderAPIKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.providerAPIKey = false
+		m.providerAPIKeyFor = ""
+		m.providerAPIKeyValue = ""
+	case "enter":
+		key := strings.TrimSpace(m.providerAPIKeyValue)
+		if key == "" {
+			m.notice = "API key is required"
+			return m, nil
+		}
+		if m.options.SaveProviderAPIKey == nil {
+			m.notice = "Could not save API key"
+			return m, nil
+		}
+		if err := m.options.SaveProviderAPIKey(m.providerAPIKeyFor, key); err != nil {
+			m.notice = "Could not save API key"
+			return m, nil
+		}
+		selected := m.providerAPIKeyFor
+		m.providerAPIKey = false
+		m.providerAPIKeyFor = ""
+		m.providerAPIKeyValue = ""
+		m.notice = ""
+		m.selectProvider(selected, false)
+	case "backspace", "ctrl+h":
+		if len(m.providerAPIKeyValue) > 0 {
+			runes := []rune(m.providerAPIKeyValue)
+			m.providerAPIKeyValue = string(runes[:len(runes)-1])
+		}
+	case "ctrl+w":
+		m.providerAPIKeyValue = strings.TrimRight(m.providerAPIKeyValue, " ")
+		if end := strings.LastIndex(m.providerAPIKeyValue, " "); end >= 0 {
+			m.providerAPIKeyValue = strings.TrimRight(m.providerAPIKeyValue[:end+1], " ")
+		} else {
+			m.providerAPIKeyValue = ""
+		}
+	case "ctrl+u":
+		m.providerAPIKeyValue = ""
+	case "ctrl+c":
+		return m, tea.Quit
+	default:
+		if msg.Type == tea.KeySpace {
+			m.providerAPIKeyValue += " "
+		} else if msg.Type == tea.KeyRunes {
+			m.providerAPIKeyValue += string(msg.Runes)
+		}
+	}
+	return m, nil
 }
 
 func (m browserModel[T]) updateCustomPlayer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1449,6 +1521,8 @@ func (m browserModel[T]) View() string {
 		modal = m.helpModal()
 	case m.customPlayer:
 		modal = inputModal("Custom player", m.customPlayerValue, "Enter save  Esc cancel")
+	case m.providerAPIKey:
+		modal = inputModal("TorBox API key", strings.Repeat("*", len([]rune(m.providerAPIKeyValue))), "Enter save  Esc cancel")
 	case m.settingsMenu:
 		modal = m.settingsModal()
 	case m.sortMenu:

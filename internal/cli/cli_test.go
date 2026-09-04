@@ -94,6 +94,7 @@ func TestDefaultPlayerUsesPlatformOpener(t *testing.T) {
 }
 
 func TestConfiguredAppUsesEmbeddedTorboxTokenAsFallback(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("TORBOX_API_TOKEN", "")
 	original := buildinfo.DefaultTorboxAPIToken
 	buildinfo.DefaultTorboxAPIToken = "embedded-token"
@@ -105,6 +106,7 @@ func TestConfiguredAppUsesEmbeddedTorboxTokenAsFallback(t *testing.T) {
 }
 
 func TestConfiguredAppPrefersEnvironmentTorboxToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("TORBOX_API_TOKEN", "environment-token")
 	original := buildinfo.DefaultTorboxAPIToken
 	buildinfo.DefaultTorboxAPIToken = "embedded-token"
@@ -115,16 +117,47 @@ func TestConfiguredAppPrefersEnvironmentTorboxToken(t *testing.T) {
 	}
 }
 
+func TestConfiguredAppUsesPreferredTorboxToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("TORBOX_API_TOKEN", "")
+	original := buildinfo.DefaultTorboxAPIToken
+	buildinfo.DefaultTorboxAPIToken = "embedded-token"
+	t.Cleanup(func() { buildinfo.DefaultTorboxAPIToken = original })
+	if err := config.Save(config.Preferences{TorBoxToken: "preferred-token"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := configuredApp(new(bool)).TorBox.Token; got != "preferred-token" {
+		t.Fatalf("token = %q", got)
+	}
+}
+
+func TestConfiguredAppEnvironmentOverridesPreferredTorboxToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("TORBOX_API_TOKEN", "environment-token")
+	if err := config.Save(config.Preferences{TorBoxToken: "preferred-token"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := configuredApp(new(bool)).TorBox.Token; got != "environment-token" {
+		t.Fatalf("token = %q", got)
+	}
+}
+
 func TestConfiguredAppSelectsWebStreamrWithoutTorBoxToken(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("TORBOX_API_TOKEN", "")
 	t.Setenv("LEMMEWATCH_PROVIDER", "")
+	t.Setenv("LEMMEWATCH_PENGUPLAY_MANIFEST_URL", "")
 	original := buildinfo.DefaultTorboxAPIToken
 	buildinfo.DefaultTorboxAPIToken = ""
 	t.Cleanup(func() { buildinfo.DefaultTorboxAPIToken = original })
+	if err := config.Save(config.Preferences{Provider: provider.TorBoxID}); err != nil {
+		t.Fatal(err)
+	}
 
 	got := configuredApp(new(bool))
-	if got.Provider != "webstreamr" || got.Providers[got.Provider] == nil {
+	if got.Provider != "webstreamr" || got.Providers[got.Provider] == nil || len(got.ProviderNames) != 2 || got.ProviderNames[0] != provider.TorBoxID {
 		t.Fatalf("provider = %q, providers = %#v", got.Provider, got.ProviderNames)
 	}
 }
@@ -139,7 +172,7 @@ func TestConfiguredAppAddsConfiguredPenguFallback(t *testing.T) {
 	t.Cleanup(func() { buildinfo.DefaultTorboxAPIToken = original })
 
 	got := configuredApp(new(bool))
-	if got.Provider != "webstreamr" || got.Providers[provider.PenguID] == nil || len(got.ProviderNames) != 2 || got.ProviderNames[1] != provider.PenguID {
+	if got.Provider != "webstreamr" || got.Providers[provider.PenguID] == nil || len(got.ProviderNames) != 3 || got.ProviderNames[2] != provider.PenguID {
 		t.Fatalf("provider = %q, choices = %#v", got.Provider, got.ProviderNames)
 	}
 }

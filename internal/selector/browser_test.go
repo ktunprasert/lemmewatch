@@ -742,6 +742,67 @@ func TestProviderSettingClearsLoadedStreams(t *testing.T) {
 	}
 }
 
+func TestProviderSettingPromptsForMaskedAPIKey(t *testing.T) {
+	m := newBrowser(testChoice{label: "episode"})
+	m.provider = "webstreamr"
+	m.options.Providers = []string{"webstreamr", "torbox"}
+	m.options.ProviderNeedsAPIKey = func(selected string) bool { return selected == "torbox" }
+	var savedProvider, savedKey string
+	m.options.SaveProviderAPIKey = func(selected, key string) error {
+		savedProvider, savedKey = selected, key
+		return nil
+	}
+	m.settingsMenu = true
+	m.settingsIndex = 3
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = next.(browserModel[testChoice])
+	if !m.providerAPIKey || m.provider != "webstreamr" {
+		t.Fatalf("API key prompt state = %#v", m)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("secret-token")})
+	m = next.(browserModel[testChoice])
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "TorBox API key") || strings.Contains(view, "secret-token") {
+		t.Fatalf("API key popup exposed value: %q", view)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if m.providerAPIKey || m.provider != "torbox" || savedProvider != "torbox" || savedKey != "secret-token" {
+		t.Fatalf("saved provider key = %q/%q, state = %#v", savedProvider, savedKey, m)
+	}
+}
+
+func TestProviderAPIKeyCancelAndSaveFailureKeepProvider(t *testing.T) {
+	m := newBrowser(testChoice{label: "episode"})
+	m.provider = "webstreamr"
+	m.options.Providers = []string{"webstreamr", "torbox"}
+	m.options.ProviderNeedsAPIKey = func(selected string) bool { return selected == "torbox" }
+	m.settingsMenu = true
+	m.settingsIndex = 3
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("secret")})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = next.(browserModel[testChoice])
+	if m.providerAPIKey || m.providerAPIKeyValue != "" || m.provider != "webstreamr" {
+		t.Fatalf("cancelled API key state = %#v", m)
+	}
+
+	m.options.SaveProviderAPIKey = func(string, string) error { return errors.New("read-only config") }
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("secret")})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(browserModel[testChoice])
+	if !m.providerAPIKey || m.provider != "webstreamr" || m.notice != "Could not save API key" {
+		t.Fatalf("failed API key save state = %#v", m)
+	}
+}
+
 func TestStaleProviderLoadIsIgnored(t *testing.T) {
 	m := newBrowser(testChoice{label: "episode"})
 	m.provider = "webstreamr"
