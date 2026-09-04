@@ -265,6 +265,138 @@ func TestEpisodeChildrenUseCacheUntilRefresh(t *testing.T) {
 	}
 }
 
+func TestNextAndPreviousEpisodesCrossSeasonBoundaries(t *testing.T) {
+	season1 := testChoice{label: "Season 1"}
+	season2 := testChoice{label: "Season 2"}
+	episode1 := testChoice{label: "Episode 1", cacheKey: "streams:1"}
+	episode2 := testChoice{label: "Episode 2", cacheKey: "streams:2"}
+	episode3 := testChoice{label: "Episode 1", cacheKey: "streams:3"}
+	future := testChoice{label: "Episode 2", cacheKey: "streams:4", unavailable: true}
+	m := newBrowser(season1, season2)
+	m.levels[0].filter = "Season 1"
+	m.levels = append(m.levels, pane[testChoice]{title: "Episodes", items: []testChoice{episode1, episode2}, index: 1})
+	m.levels[0].index = 0
+	m.focusRight = true
+	m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "Episode 2 torrent", terminal: true, cached: true}}}
+	m.crumbs = []string{"Season 1", "Episode 2"}
+	m.load = func(_ context.Context, selected testChoice) ([]testChoice, error) {
+		switch selected.label {
+		case "Season 1":
+			return []testChoice{episode1, episode2}, nil
+		case "Season 2":
+			return []testChoice{episode3, future}, nil
+		default:
+			return []testChoice{{label: selected.cacheKey, terminal: true, cached: true}}, nil
+		}
+	}
+
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	m = next.(browserModel[testChoice])
+	if command == nil || !m.loading {
+		t.Fatal("next did not begin cross-season load")
+	}
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if m.levels[0].index != 1 || m.levels[0].filter != "" || m.current().index != 0 || m.crumbs[0] != "Season 2" || m.right.items[0].label != "streams:3" {
+		t.Fatalf("next season state = %#v", m)
+	}
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	m = next.(browserModel[testChoice])
+	if m.notice != "No next aired episode" || m.current().index != 0 {
+		t.Fatalf("future episode boundary = %#v", m)
+	}
+
+	next, command = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = next.(browserModel[testChoice])
+	if command == nil {
+		t.Fatal("previous did not begin cross-season load")
+	}
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if m.levels[0].index != 0 || m.current().index != 1 || m.crumbs[0] != "Season 1" || m.right.items[0].label != "streams:2" {
+		t.Fatalf("previous season state = %#v", m)
+	}
+}
+
+func TestBackInvalidatesCrossSeasonLoad(t *testing.T) {
+	episode := testChoice{label: "Episode 1", cacheKey: "streams:1"}
+	m := newBrowser(testChoice{label: "Season 1"}, testChoice{label: "Season 2"})
+	m.levels = append(m.levels, pane[testChoice]{title: "Episodes", items: []testChoice{episode}})
+	m.focusRight = true
+	m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "current torrent", terminal: true, cached: true}}}
+	m.crumbs = []string{"Season 1", "Episode 1"}
+	m.load = func(_ context.Context, selected testChoice) ([]testChoice, error) {
+		if selected.label == "Season 2" {
+			return []testChoice{{label: "Episode 1", cacheKey: "streams:2"}}, nil
+		}
+		return []testChoice{{label: "next torrent", terminal: true, cached: true}}, nil
+	}
+
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if m.loading || m.focusRight || m.levels[0].index != 0 || m.right.items[0].label != "current torrent" {
+		t.Fatalf("stale cross-season load changed state = %#v", m)
+	}
+}
+
+func TestEpisodeNavigationClearsOldEpisodeFilter(t *testing.T) {
+	episode1 := testChoice{label: "Episode 1", cacheKey: "streams:1"}
+	episode2 := testChoice{label: "Episode 2", cacheKey: "streams:2"}
+	m := newBrowser(testChoice{label: "Season 1"})
+	m.levels = append(m.levels, pane[testChoice]{title: "Episodes", items: []testChoice{episode1, episode2}, filter: "Episode 1"})
+	m.focusRight = true
+	m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "torrent", terminal: true, cached: true}}}
+	m.load = func(context.Context, testChoice) ([]testChoice, error) { return nil, nil }
+
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	m = next.(browserModel[testChoice])
+	if command == nil || m.current().filter != "" || m.current().index != 1 {
+		t.Fatalf("episode filter affected navigation = %#v", m)
+	}
+}
+
+func TestEpisodeNavigationDoesNotApplyToMovies(t *testing.T) {
+	m := newBrowser(testChoice{label: "Movie"})
+	m.focusRight = true
+	m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "torrent", terminal: true, cached: true}}}
+
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	m = next.(browserModel[testChoice])
+	if command != nil || m.loading || m.notice != "" {
+		t.Fatalf("movie navigation changed state = %#v", m)
+	}
+	if strings.Contains(ansi.Strip(m.View()), "n/p episode") {
+		t.Fatal("movie streams displayed episode navigation hint")
+	}
+}
+
+func TestEpisodeNavigationToastsAtSeriesBounds(t *testing.T) {
+	for _, test := range []struct {
+		key    rune
+		notice string
+	}{
+		{key: 'n', notice: "No next aired episode"},
+		{key: 'p', notice: "No previous episode"},
+	} {
+		episode := testChoice{label: "Episode 1", cacheKey: "streams:1"}
+		m := newBrowser(testChoice{label: "Season 1"})
+		m.levels = append(m.levels, pane[testChoice]{title: "Episodes", items: []testChoice{episode}})
+		m.focusRight = true
+		m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "torrent", terminal: true, cached: true}}}
+
+		next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{test.key}})
+		m = next.(browserModel[testChoice])
+		if command == nil || m.notice != test.notice || m.right.items[0].label != "torrent" {
+			t.Fatalf("%q boundary state = %#v", test.key, m)
+		}
+	}
+}
+
 func paneTitles(panes []visiblePane[testChoice]) string {
 	titles := make([]string, len(panes))
 	for i, pane := range panes {

@@ -116,6 +116,21 @@ type historyChanged[T item] struct {
 	added bool
 	err   error
 }
+type episodeSwitched[T item] struct {
+	episodes     []T
+	streams      []T
+	seasonIndex  int
+	episodeIndex int
+	seasonLabel  string
+	episodeLabel string
+	title        string
+	key          string
+	provider     string
+	loadID       uint64
+	direction    int
+	found        bool
+	err          error
+}
 
 type helpBinding struct {
 	keys  string
@@ -287,6 +302,38 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		} else {
 			m.notice = "Removed from history"
 		}
+	case episodeSwitched[T]:
+		if msg.provider != m.provider || msg.loadID != m.loadID {
+			break
+		}
+		m.loading = false
+		if msg.err != nil {
+			m.notice = "Load failed: " + msg.err.Error()
+			break
+		}
+		if !msg.found {
+			m.notice = episodeBoundaryNotice(msg.direction)
+			break
+		}
+		seasonLevel := len(m.levels) - 2
+		m.levels[seasonLevel].index = msg.seasonIndex
+		m.levels[seasonLevel].filter = ""
+		m.current().items = msg.episodes
+		m.current().index = msg.episodeIndex
+		m.current().filter = ""
+		m.right = pane[T]{title: msg.title, items: msg.streams}
+		m.err = nil
+		m.focusRight = true
+		if seasonLevel+1 < len(m.crumbs) {
+			m.crumbs[seasonLevel] = msg.seasonLabel
+			m.crumbs[seasonLevel+1] = msg.episodeLabel
+		}
+		if msg.key != "" {
+			if m.loadCache == nil {
+				m.loadCache = make(map[string][]T)
+			}
+			m.loadCache[msg.key] = msg.streams
+		}
 	case spinnerTick:
 		if m.searching || m.historyBusy {
 			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
@@ -355,6 +402,14 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 						return m.loadSelected(selected, true)
 					}
 				}
+			}
+		case "n":
+			if m.canSwitchEpisode() {
+				return m.switchEpisode(1)
+			}
+		case "p":
+			if m.canSwitchEpisode() {
+				return m.switchEpisode(-1)
 			}
 		case "s":
 			if (!m.focusRight && len(m.levels) == 1) || (m.focusRight && m.rightHasStreams()) {
@@ -753,6 +808,12 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 	if m.options.ToggleHistory != nil && m.options.History != nil {
 		bindings = append(bindings, helpBinding{keys: "w", label: "Toggle selected title in history", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}})
 	}
+	if m.canSwitchEpisode() {
+		bindings = append(bindings,
+			helpBinding{keys: "n", label: "Load next episode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}},
+			helpBinding{keys: "p", label: "Load previous episode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}},
+		)
+	}
 	if m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
 		bindings = append(bindings, helpBinding{keys: "d", label: "Remove selected title from history", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}})
 	}
@@ -846,6 +907,10 @@ func (m *browserModel[T]) setContextMode(key string) {
 }
 
 func (m *browserModel[T]) back() {
+	if m.loading {
+		m.loading = false
+		m.loadID++
+	}
 	if m.focusRight {
 		m.focusRight = false
 		return
@@ -980,6 +1045,125 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 		items, err := m.load(m.ctx, selected)
 		return loaded[T]{items: items, err: err, key: key, provider: m.provider, loadID: loadID}
 	}
+}
+
+func (m browserModel[T]) switchEpisode(direction int) (tea.Model, tea.Cmd) {
+	if m.loading || len(m.levels) < 2 {
+		return m, nil
+	}
+	visibleEpisodes := m.filteredCurrent()
+	if len(visibleEpisodes) == 0 {
+		return m, nil
+	}
+	currentEpisode := visibleEpisodes[clamp(m.current().index, len(visibleEpisodes))]
+	current := currentEpisode.item
+	if cacheable, ok := any(current).(cacheableItem); !ok || cacheable.CacheKey() == "" {
+		return m, nil
+	}
+	episodes := m.current().items
+	for index := currentEpisode.index + direction; index >= 0 && index < len(episodes); index += direction {
+		if itemUnavailable(episodes[index]) {
+			if direction > 0 {
+				m.notice = episodeBoundaryNotice(direction)
+				return m, nil
+			}
+			continue
+		}
+		m.current().filter = ""
+		m.current().index = index
+		if len(m.crumbs) > 0 {
+			m.crumbs[len(m.crumbs)-1] = plainLabel(episodes[index].Label())
+		}
+		return m.loadSelected(episodes[index], false)
+	}
+
+	seasonLevel := len(m.levels) - 2
+	visibleSeasons := m.filteredLevel(seasonLevel)
+	if len(visibleSeasons) == 0 {
+		return m, nil
+	}
+	currentSeason := visibleSeasons[clamp(m.levels[seasonLevel].index, len(visibleSeasons))]
+	seasons := m.levels[seasonLevel].items
+	seasonIndex := currentSeason.index + direction
+	if seasonIndex < 0 || seasonIndex >= len(seasons) {
+		m.notice = episodeBoundaryNotice(direction)
+		return m, nil
+	}
+
+	m.loading = true
+	m.notice = ""
+	m.loadID++
+	loadID := m.loadID
+	provider := m.provider
+	loadCache := m.loadCache
+	return m, func() tea.Msg {
+		for index := seasonIndex; index >= 0 && index < len(seasons); index += direction {
+			season := seasons[index]
+			episodes, err := m.load(m.ctx, season)
+			if err != nil {
+				return episodeSwitched[T]{provider: provider, loadID: loadID, direction: direction, err: err}
+			}
+			start, end, step := 0, len(episodes), 1
+			if direction < 0 {
+				start, end, step = len(episodes)-1, -1, -1
+			}
+			for episodeIndex := start; episodeIndex != end; episodeIndex += step {
+				episode := episodes[episodeIndex]
+				if itemUnavailable(episode) {
+					if direction > 0 {
+						return episodeSwitched[T]{provider: provider, loadID: loadID, direction: direction}
+					}
+					continue
+				}
+				key := itemCacheKey(episode, provider)
+				streams, cached := loadCache[key]
+				if !cached {
+					streams, err = m.load(m.ctx, episode)
+					if err != nil {
+						return episodeSwitched[T]{provider: provider, loadID: loadID, direction: direction, err: err}
+					}
+				}
+				return episodeSwitched[T]{episodes: episodes, streams: streams, seasonIndex: index, episodeIndex: episodeIndex, seasonLabel: plainLabel(season.Label()), episodeLabel: plainLabel(episode.Label()), title: m.childTitle(episode), key: key, provider: provider, loadID: loadID, direction: direction, found: true}
+			}
+		}
+		return episodeSwitched[T]{provider: provider, loadID: loadID, direction: direction}
+	}
+}
+
+func (m browserModel[T]) canSwitchEpisode() bool {
+	if !m.focusRight || !m.rightHasStreams() || len(m.levels) < 2 {
+		return false
+	}
+	episodes := m.filteredCurrent()
+	if len(episodes) == 0 {
+		return false
+	}
+	cacheable, ok := any(episodes[clamp(m.current().index, len(episodes))].item).(cacheableItem)
+	return ok && cacheable.CacheKey() != ""
+}
+
+func itemUnavailable[T item](value T) bool {
+	unavailable, ok := any(value).(unavailableItem)
+	return ok && unavailable.Unavailable()
+}
+
+func itemCacheKey[T item](value T, provider string) string {
+	cacheable, ok := any(value).(cacheableItem)
+	if !ok || cacheable.CacheKey() == "" {
+		return ""
+	}
+	key := cacheable.CacheKey()
+	if provider != "" {
+		key = provider + ":" + key
+	}
+	return key
+}
+
+func episodeBoundaryNotice(direction int) string {
+	if direction < 0 {
+		return "No previous episode"
+	}
+	return "No next aired episode"
 }
 
 func (m browserModel[T]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1242,6 +1426,9 @@ func (m browserModel[T]) View() string {
 	}
 	if m.focusRight {
 		helpText = "h/l focus  j/k move  enter open/select  / filter  esc back"
+		if m.canSwitchEpisode() {
+			helpText = "n/p episode  " + helpText
+		}
 		if m.rightHasStreams() && m.rightCacheApplicable() {
 			helpText = "c cached/all  v quality  " + helpText
 		}
