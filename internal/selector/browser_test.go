@@ -979,14 +979,17 @@ func TestQualityCyclePersists(t *testing.T) {
 
 func TestBrowserPlaybackKeepsSessionOpen(t *testing.T) {
 	played := false
-	m := newBrowser(testChoice{label: "parent"})
+	m := newBrowser(testChoice{label: "Episode 1", watchID: "show", watchKeys: []string{"1:1"}})
 	m.focusRight = true
-	m.right.items = []testChoice{{label: "stream", terminal: true, cached: true}}
+	m.right.items = []testChoice{{label: "stream", terminal: true, cached: true, watchID: "show", watchKeys: []string{"1:1"}}}
 	m.options.Play = func(context.Context, testChoice) error { played = true; return nil }
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
 	if !m.playing || m.chosen || command == nil {
 		t.Fatalf("playback did not remain in session: %#v", m)
+	}
+	if !m.options.Watched["show"] || !m.options.Watched["show:1:1"] || !strings.Contains(ansi.Strip(m.View()), "✓ Episode 1") {
+		t.Fatalf("playback did not update watched state: %#v", m)
 	}
 	next, _ = m.Update(command())
 	m = next.(browserModel[testChoice])

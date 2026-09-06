@@ -157,6 +157,9 @@ type cacheableItem interface{ CacheKey() string }
 type watchableItem interface{ WatchIdentity() (string, []string) }
 
 func isWatched(value any, state map[string]bool) bool {
+	if terminal, ok := value.(terminalItem); ok && terminal.Terminal() {
+		return false
+	}
 	watchable, ok := value.(watchableItem)
 	if !ok {
 		return false
@@ -1113,6 +1116,18 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 			m.playing = true
 			m.stopPlaying = cancel
 			m.notice = "Starting playback..."
+			if watchable, ok := any(selected).(watchableItem); ok {
+				identity, keys := watchable.WatchIdentity()
+				if identity != "" {
+					if m.options.Watched == nil {
+						m.options.Watched = make(map[string]bool)
+					}
+					m.options.Watched[identity] = true
+					for _, key := range keys {
+						m.options.Watched[identity+":"+key] = true
+					}
+				}
+			}
 			return m, func() tea.Msg {
 				return playFinished{err: m.options.Play(playContext, selected)}
 			}

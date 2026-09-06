@@ -181,11 +181,14 @@ func (n navigationChoice) CacheKey() string {
 	return ""
 }
 func (n navigationChoice) WatchIdentity() (string, []string) {
-	if n.kind == navigationStream || n.media.ID == "" {
+	if n.media.ID == "" {
 		return "", nil
 	}
 	switch n.kind {
-	case navigationEpisode:
+	case navigationEpisode, navigationStream:
+		if n.episode.ID == "" {
+			return n.media.ID, nil
+		}
 		return n.media.ID, []string{fmt.Sprintf("%d:%d", n.episode.Season, n.episode.Episode)}
 	case navigationSeason:
 		keys := make([]string, len(n.episodes))
@@ -512,10 +515,6 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			}
 			if err := config.RecordHistory(entry); err != nil {
 				return fmt.Errorf("record history: %w", err)
-			}
-			watched[selected.media.ID] = true
-			for _, key := range entry.Episodes {
-				watched[selected.media.ID+":"+key] = true
 			}
 			if err := a.Player.Play(playContext, playback); err != nil {
 				if playContext.Err() != nil {
