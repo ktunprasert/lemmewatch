@@ -10,13 +10,14 @@ const (
 )
 
 type Media struct {
-	ID      string
-	Type    MediaType
-	Name    string
-	Year    int
-	Poster  string
-	Summary string
-	Rating  string
+	ID       string
+	Type     MediaType
+	Name     string
+	Year     int
+	Poster   string
+	Summary  string
+	Rating   string
+	PlayedAt time.Time
 }
 
 type Stream struct {

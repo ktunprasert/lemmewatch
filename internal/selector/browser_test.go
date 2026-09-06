@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -18,6 +19,7 @@ type testChoice struct {
 	cached      bool
 	quality     int
 	year        int
+	playedAt    time.Time
 	modes       []ContextMode
 	unavailable bool
 	cacheKey    string
@@ -35,8 +37,8 @@ func (c testChoice) Terminal() bool { return c.terminal }
 func (c testChoice) StreamInfo() (StreamInfo, bool) {
 	return StreamInfo{Cached: c.cached, CacheApplicable: c.terminal && !c.direct, Playable: c.cached || c.playable, Quality: c.quality}, c.terminal
 }
-func (c testChoice) SortFields() (string, int, bool) {
-	return c.label, c.year, !c.terminal
+func (c testChoice) SortFields() (string, int, time.Time, bool) {
+	return c.label, c.year, c.playedAt, !c.terminal
 }
 
 func newBrowser(items ...testChoice) browserModel[testChoice] {
@@ -634,6 +636,44 @@ func TestBrowserShowsAndCancelsSortMenu(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	if m.sortMenu || m.sortMode != sortRelevance {
 		t.Fatalf("sort menu not cancelled: %#v", m)
+	}
+}
+
+func TestBrowserSortsHistoryByDatePlayed(t *testing.T) {
+	older := time.Date(2025, time.January, 2, 0, 0, 0, 0, time.UTC)
+	newer := older.Add(24 * time.Hour)
+	m := newBrowser(
+		testChoice{label: "Newest", playedAt: newer},
+		testChoice{label: "Oldest", playedAt: older},
+		testChoice{label: "Unknown"},
+	)
+	m.activeQuery = "History"
+
+	setSort := func(key rune) {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		m = next.(browserModel[testChoice])
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		m = next.(browserModel[testChoice])
+	}
+	labels := func() string {
+		items := m.filteredCurrent()
+		values := make([]string, len(items))
+		for i, item := range items {
+			values[i] = item.item.label
+		}
+		return strings.Join(values, ",")
+	}
+
+	setSort('p')
+	if got := labels(); got != "Oldest,Newest,Unknown" {
+		t.Fatalf("date played ascending = %q", got)
+	}
+	setSort('P')
+	if got := labels(); got != "Newest,Oldest,Unknown" {
+		t.Fatalf("date played descending = %q", got)
+	}
+	if view := ansi.Strip(sortModal(false, true)); !strings.Contains(view, "Date played ascending") {
+		t.Fatalf("history sort menu = %q", view)
 	}
 }
 

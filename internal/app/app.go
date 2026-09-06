@@ -95,6 +95,7 @@ const (
 type navigationChoice struct {
 	kind     navigationKind
 	media    model.Media
+	playedAt time.Time
 	season   int
 	episodes []model.Episode
 	episode  model.Episode
@@ -123,7 +124,11 @@ func (n navigationChoice) ContextModes() []selector.ContextMode {
 		if n.media.Year > 0 {
 			year = strconv.Itoa(n.media.Year)
 		}
-		return []selector.ContextMode{{Group: "media", Key: "y", Name: "Year", Value: year}, {Group: "media", Key: "r", Name: "Rating", Value: n.media.Rating}, {Group: "media", Key: "i", Name: "ID", Value: n.media.ID}, {Group: "media", Key: "t", Name: "Type", Value: string(n.media.Type)}}
+		modes := []selector.ContextMode{{Group: "media", Key: "y", Name: "Year", Value: year}, {Group: "media", Key: "r", Name: "Rating", Value: n.media.Rating}, {Group: "media", Key: "i", Name: "ID", Value: n.media.ID}, {Group: "media", Key: "t", Name: "Type", Value: string(n.media.Type)}}
+		if !n.playedAt.IsZero() {
+			modes = append(modes, selector.ContextMode{Group: "media", Key: "p", Name: "Date played", Value: n.playedAt.Local().Format("2006-01-02")})
+		}
+		return modes
 	case navigationSeason:
 		return []selector.ContextMode{{Group: "season", Key: "e", Name: "Episodes", Value: fmt.Sprintf("%d episodes", len(n.episodes))}}
 	case navigationEpisode:
@@ -178,11 +183,11 @@ func (n navigationChoice) CacheKey() string {
 func (n navigationChoice) StreamInfo() (selector.StreamInfo, bool) {
 	return selector.StreamInfo{Cached: n.stream.Cache == model.CacheCached, CacheApplicable: n.stream.Cache != model.CacheNotApplicable, Playable: n.stream.Playable, Quality: n.stream.Quality}, n.kind == navigationStream
 }
-func (n navigationChoice) SortFields() (string, int, bool) {
+func (n navigationChoice) SortFields() (string, int, time.Time, bool) {
 	if n.kind == navigationStream {
-		return n.stream.Title, 0, true
+		return n.stream.Title, 0, time.Time{}, true
 	}
-	return n.media.Name, n.media.Year, n.kind == navigationMedia
+	return n.media.Name, n.media.Year, n.playedAt, n.kind == navigationMedia
 }
 
 func (a App) Search(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
@@ -310,7 +315,7 @@ func historyMedia(entries []config.HistoryEntry) []model.Media {
 		if mediaType != model.Movie && mediaType != model.Series {
 			continue
 		}
-		items = append(items, model.Media{ID: entry.ID, Type: mediaType, Name: entry.Title})
+		items = append(items, model.Media{ID: entry.ID, Type: mediaType, Name: entry.Title, PlayedAt: entry.PlayedAt})
 	}
 	return items
 }
@@ -318,7 +323,7 @@ func historyMedia(entries []config.HistoryEntry) []model.Media {
 func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle, initialQuery string, parentGroups []string) error {
 	choices := make([]navigationChoice, len(items))
 	for i, item := range items {
-		choices[i] = navigationChoice{kind: navigationMedia, media: item}
+		choices[i] = navigationChoice{kind: navigationMedia, media: item, playedAt: item.PlayedAt}
 	}
 	preferences := config.Load()
 	providerID := a.Provider

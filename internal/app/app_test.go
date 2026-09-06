@@ -53,13 +53,26 @@ func TestSearchPreservesCatalogRelevanceWithinMediaType(t *testing.T) {
 }
 
 func TestHistoryMediaPreservesPlayableEntries(t *testing.T) {
+	playedAt := time.Date(2025, time.January, 2, 3, 4, 0, 0, time.UTC)
 	items := historyMedia([]config.HistoryEntry{
-		{ID: "tt1", Title: "Movie", Type: "movie"},
+		{ID: "tt1", Title: "Movie", Type: "movie", PlayedAt: playedAt},
 		{ID: "bad", Title: "Invalid", Type: "podcast"},
 		{ID: "tt2", Title: "Series", Type: "series"},
 	})
 	if len(items) != 2 || items[0].Name != "Movie" || items[1].Type != model.Series {
 		t.Fatalf("items = %#v", items)
+	}
+	if !items[0].PlayedAt.Equal(playedAt) {
+		t.Fatalf("played at = %v", items[0].PlayedAt)
+	}
+}
+
+func TestHistoryChoiceHasDatePlayedMode(t *testing.T) {
+	playedAt := time.Date(2025, time.January, 2, 3, 4, 0, 0, time.Local)
+	modes := (navigationChoice{kind: navigationMedia, playedAt: playedAt}).ContextModes()
+	last := modes[len(modes)-1]
+	if last.Key != "p" || last.Name != "Date played" || last.Value != "2025-01-02" {
+		t.Fatalf("date played mode = %#v", last)
 	}
 }
 

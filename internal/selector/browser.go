@@ -56,7 +56,7 @@ type StreamInfo struct {
 	Playable        bool
 }
 type sortableItem interface {
-	SortFields() (name string, year int, ok bool)
+	SortFields() (name string, year int, playedAt time.Time, ok bool)
 }
 
 type sortMode int
@@ -67,6 +67,8 @@ const (
 	sortNameDescending
 	sortYearAscending
 	sortYearDescending
+	sortPlayedAscending
+	sortPlayedDescending
 	sortQualityAscending
 	sortQualityDescending
 	sortCachedFirst
@@ -945,6 +947,12 @@ func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "Y":
 		m.sortMode = sortYearDescending
 		m.setContextMode("y")
+	case "p":
+		m.sortMode = sortPlayedAscending
+		m.setContextMode("p")
+	case "P":
+		m.sortMode = sortPlayedDescending
+		m.setContextMode("p")
 	case "d", "r":
 		m.sortMode = sortRelevance
 	case "q", "ctrl+c":
@@ -1314,14 +1322,17 @@ func (m browserModel[T]) pageSize() int      { return max(1, m.height-6) }
 func (m browserModel[T]) filteredCurrent() []indexed[T] {
 	current := m.levels[len(m.levels)-1]
 	items := filterItems(current.items, current.filter)
-	if len(m.levels) != 1 || len(m.options.ParentGroups) == 0 {
+	if len(m.levels) != 1 {
 		return items
 	}
-	group := m.options.ParentGroups[m.groupIndex]
-	result := items[:0]
-	for _, value := range items {
-		if grouped, ok := any(value.item).(groupedItem); ok && grouped.Group() == group {
-			result = append(result, value)
+	result := items
+	if len(m.options.ParentGroups) > 0 {
+		group := m.options.ParentGroups[m.groupIndex]
+		result = items[:0]
+		for _, value := range items {
+			if grouped, ok := any(value.item).(groupedItem); ok && grouped.Group() == group {
+				result = append(result, value)
+			}
 		}
 	}
 	if m.sortMode != sortRelevance {
@@ -1331,8 +1342,8 @@ func (m browserModel[T]) filteredCurrent() []indexed[T] {
 			if !leftOK || !rightOK {
 				return false
 			}
-			leftName, leftYear, leftSortable := left.SortFields()
-			rightName, rightYear, rightSortable := right.SortFields()
+			leftName, leftYear, leftPlayed, leftSortable := left.SortFields()
+			rightName, rightYear, rightPlayed, rightSortable := right.SortFields()
 			if !leftSortable || !rightSortable {
 				return false
 			}
@@ -1352,6 +1363,17 @@ func (m browserModel[T]) filteredCurrent() []indexed[T] {
 					return leftYear < rightYear
 				}
 				return leftYear > rightYear
+			case sortPlayedAscending, sortPlayedDescending:
+				if leftPlayed.IsZero() || rightPlayed.IsZero() {
+					return rightPlayed.IsZero() && !leftPlayed.IsZero()
+				}
+				if leftPlayed.Equal(rightPlayed) {
+					return strings.ToLower(leftName) < strings.ToLower(rightName)
+				}
+				if m.sortMode == sortPlayedAscending {
+					return leftPlayed.Before(rightPlayed)
+				}
+				return leftPlayed.After(rightPlayed)
 			}
 			return false
 		})
@@ -1422,8 +1444,8 @@ func (m browserModel[T]) filteredRight() []indexed[T] {
 				if !leftOK || !rightOK {
 					return false
 				}
-				leftName, _, _ := leftSortable.SortFields()
-				rightName, _, _ := rightSortable.SortFields()
+				leftName, _, _, _ := leftSortable.SortFields()
+				rightName, _, _, _ := rightSortable.SortFields()
 				if m.streamSort == sortNameAscending {
 					return strings.ToLower(leftName) < strings.ToLower(rightName)
 				}
@@ -1526,7 +1548,7 @@ func (m browserModel[T]) View() string {
 	case m.settingsMenu:
 		modal = m.settingsModal()
 	case m.sortMenu:
-		modal = sortModal(m.focusRight && m.rightHasStreams())
+		modal = sortModal(m.focusRight && m.rightHasStreams(), m.inHistoryRoot())
 	case m.modeMenu:
 		modal = modeModal(m.contextModes())
 	case m.querying:
@@ -1618,7 +1640,7 @@ func (m browserModel[T]) breadcrumb() string {
 	return strings.Join(parts, " / ")
 }
 
-func sortModal(torrents bool) string {
+func sortModal(torrents, history bool) string {
 	lines := []string{
 		headerStyle.Render("Sort results"),
 		"a   Name ascending",
@@ -1626,6 +1648,9 @@ func sortModal(torrents bool) string {
 		"y   Year ascending",
 		"Y   Year descending",
 		"d/r Default relevance",
+	}
+	if history {
+		lines = append(lines[:len(lines)-1], "p   Date played ascending", "P   Date played descending", lines[len(lines)-1])
 	}
 	if torrents {
 		lines = []string{
