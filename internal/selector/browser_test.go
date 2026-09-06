@@ -45,7 +45,7 @@ func (c testChoice) SortFields() (string, int, time.Time, bool) {
 }
 
 func newBrowser(items ...testChoice) browserModel[testChoice] {
-	return browserModel[testChoice]{ctx: context.Background(), levels: []pane[testChoice]{{title: "Search", items: items}}, cachedOnly: true}
+	return browserModel[testChoice]{ctx: context.Background(), levels: []pane[testChoice]{{title: "Search", items: items}}, cachedOnly: true, help: newHelpModel()}
 }
 
 func runAsync(command tea.Cmd) tea.Msg {

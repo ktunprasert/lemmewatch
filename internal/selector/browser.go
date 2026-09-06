@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -232,6 +233,7 @@ type browserModel[T item] struct {
 	stopPlaying         context.CancelFunc
 	loadCache           map[string][]T
 	loadID              uint64
+	help                help.Model
 }
 
 var (
@@ -1585,31 +1587,8 @@ func (m browserModel[T]) View() string {
 		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode, m.options.Watched)
 	}
 	breadcrumb := m.breadcrumb()
-	helpText := "? keys  m mode  s sort  h/l focus  H home  j/k move  enter open  / filter  q quit"
-	if m.options.Requery != nil {
-		helpText = "? keys  m mode  s sort  h/l focus  H home  j/k move  enter open  ctrl-h history  ctrl-p search  / filter  q quit"
-	}
-	if len(m.options.ParentGroups) > 1 {
-		helpText = "tab movie/series  " + helpText
-	}
-	if m.focusRight {
-		helpText = "h/l focus  H home  j/k move  enter open/select  / filter  esc back"
-		if m.canSwitchEpisode() {
-			helpText = "n/p episode  " + helpText
-		}
-		if m.rightHasStreams() && m.rightCacheApplicable() {
-			helpText = "c cached/all  v quality  " + helpText
-		}
-	}
-	if m.playing {
-		helpText = "PLAYING  x stop  |  " + helpText
-	}
-	if m.options.ToggleWatched != nil && (!m.focusRight || !m.rightHasStreams()) {
-		helpText = "w watched  " + helpText
-	}
-	if m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
-		helpText = "d remove  " + helpText
-	}
+	m.help.Width = width
+	helpText := hintStyle.Render(m.help.ShortHelpView(m.shortHelp(browserKeys())))
 	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + hintStyle.Render(helpText) + "\n"
 	var modal string
 	switch {
@@ -2045,7 +2024,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 	if options.PreferredCached != nil {
 		cachedOnly = *options.PreferredCached
 	}
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24, help: newHelpModel()}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {
