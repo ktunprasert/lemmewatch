@@ -25,11 +25,14 @@ type testChoice struct {
 	cacheKey    string
 	direct      bool
 	playable    bool
+	watchID     string
+	watchKeys   []string
 }
 
-func (c testChoice) ContextModes() []ContextMode { return c.modes }
-func (c testChoice) Unavailable() bool           { return c.unavailable }
-func (c testChoice) CacheKey() string            { return c.cacheKey }
+func (c testChoice) ContextModes() []ContextMode       { return c.modes }
+func (c testChoice) Unavailable() bool                 { return c.unavailable }
+func (c testChoice) CacheKey() string                  { return c.cacheKey }
+func (c testChoice) WatchIdentity() (string, []string) { return c.watchID, c.watchKeys }
 
 func (c testChoice) Label() string  { return c.label }
 func (c testChoice) Group() string  { return c.group }
@@ -246,7 +249,7 @@ func TestEpisodeChildrenUseCacheUntilRefresh(t *testing.T) {
 
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	next, _ = m.Update(command())
+	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
 	m.focusRight = false
 	next, command = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1040,6 +1043,33 @@ func TestBrowserRequeriesRoot(t *testing.T) {
 	}
 }
 
+func TestBrowserRunsInitialSearchBehindPopup(t *testing.T) {
+	m := newBrowser()
+	m.options.InitialQuery = "Silo"
+	m.options.InitialSearch = true
+	m.searching = true
+	m.loading = true
+	m.options.Requery = func(_ context.Context, query string) ([]testChoice, error) {
+		if query != "Silo" {
+			t.Fatalf("query = %q", query)
+		}
+		return []testChoice{{label: "Silo"}}, nil
+	}
+
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "Searching") {
+		t.Fatalf("initial search popup missing: %q", view)
+	}
+	command := m.Init()
+	if command == nil {
+		t.Fatal("initial search command missing")
+	}
+	next, _ := m.Update(command())
+	m = next.(browserModel[testChoice])
+	if m.searching || m.loading || len(m.current().items) != 1 || m.current().items[0].label != "Silo" {
+		t.Fatalf("initial search result = %#v", m)
+	}
+}
+
 func TestBrowserTogglesAndRemovesHistory(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
 	m.activeQuery = "Search"
@@ -1047,8 +1077,9 @@ func TestBrowserTogglesAndRemovesHistory(t *testing.T) {
 	m.options.History = func(context.Context) ([]testChoice, error) {
 		return historyItems, nil
 	}
-	m.options.ToggleHistory = func(_ context.Context, selected testChoice) (bool, error) {
-		return selected.label == "Dune", nil
+	m.levels[0].items[0].watchID = "tt1"
+	m.options.ToggleWatched = func(_ context.Context, selected testChoice) (map[string]bool, error) {
+		return map[string]bool{selected.watchID: true}, nil
 	}
 	m.options.RemoveHistory = func(_ context.Context, selected testChoice) error {
 		if selected.label != "Arrival" {
@@ -1064,7 +1095,7 @@ func TestBrowserTogglesAndRemovesHistory(t *testing.T) {
 	}
 	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
-	if m.historyBusy || m.notice != "Added to history" {
+	if m.historyBusy || m.notice != "Watched state updated" || !m.options.Watched["tt1"] {
 		t.Fatalf("history toggle = %#v", m)
 	}
 	m.levels[0] = pane[testChoice]{title: "History", items: []testChoice{{label: "Arrival"}}}
@@ -1078,6 +1109,44 @@ func TestBrowserTogglesAndRemovesHistory(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	if m.historyBusy || len(m.current().items) != 0 || m.notice != "Removed from history" {
 		t.Fatalf("history removal = %#v", m)
+	}
+}
+
+func TestBrowserTogglesWatchedEpisodeInRightPane(t *testing.T) {
+	m := newBrowser(testChoice{label: "Season 1", watchID: "show"})
+	m.focusRight = true
+	m.right = pane[testChoice]{title: "Episodes", items: []testChoice{{label: "Episode 1", watchID: "show", watchKeys: []string{"1:1"}}}}
+	m.options.ToggleWatched = func(_ context.Context, selected testChoice) (map[string]bool, error) {
+		if selected.label != "Episode 1" {
+			t.Fatalf("selected = %q", selected.label)
+		}
+		return map[string]bool{"show:1:1": true}, nil
+	}
+
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	m = next.(browserModel[testChoice])
+	if command == nil || !m.historyBusy {
+		t.Fatal("right-pane watched toggle did not start")
+	}
+	next, _ = m.Update(runAsync(command))
+	m = next.(browserModel[testChoice])
+	if !m.options.Watched["show:1:1"] || m.notice != "Watched state updated" {
+		t.Fatalf("right-pane watched toggle = %#v", m)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "w watched") {
+		t.Fatalf("right-pane watched hint missing: %q", ansi.Strip(m.View()))
+	}
+}
+
+func TestBrowserRendersStableWatchedIndicators(t *testing.T) {
+	m := newBrowser(
+		testChoice{label: "Dune", watchID: "tt1"},
+		testChoice{label: "Silo", watchID: "tt2", watchKeys: []string{"1:1", "1:2"}},
+	)
+	m.options.Watched = map[string]bool{"tt1": true, "tt2:1:1": true, "tt2:1:2": true}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "✓ Dune") || !strings.Contains(view, "✓ Silo") {
+		t.Fatalf("watched indicators missing: %q", view)
 	}
 }
 

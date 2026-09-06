@@ -84,6 +84,19 @@ func TestFutureEpisodeIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestNavigationWatchIdentities(t *testing.T) {
+	media := model.Media{ID: "tt1", Type: model.Series, Name: "Silo"}
+	episodes := []model.Episode{{Season: 1, Episode: 1}, {Season: 1, Episode: 2}}
+	identity, keys := (navigationChoice{kind: navigationSeason, media: media, episodes: episodes}).WatchIdentity()
+	if identity != "tt1" || strings.Join(keys, ",") != "1:1,1:2" {
+		t.Fatalf("season identity = %q, %#v", identity, keys)
+	}
+	streams, err := streamChoices(media, episodes[0], []model.Stream{{Title: "stream"}}, nil)
+	if err != nil || len(streams) != 1 || streams[0].episode.Episode != 1 {
+		t.Fatalf("stream episode origin = %#v, %v", streams, err)
+	}
+}
+
 func TestNavigationDetailModeDefaults(t *testing.T) {
 	cases := []struct {
 		choice navigationChoice

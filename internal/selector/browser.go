@@ -17,6 +17,7 @@ import (
 type BrowserOptions[T item] struct {
 	InitialTitle        string
 	InitialQuery        string
+	InitialSearch       bool
 	ParentGroups        []string
 	PreferredGroup      string
 	PreferredQuality    int
@@ -38,7 +39,8 @@ type BrowserOptions[T item] struct {
 	Play                func(context.Context, T) error
 	Requery             func(context.Context, string) ([]T, error)
 	History             func(context.Context) ([]T, error)
-	ToggleHistory       func(context.Context, T) (bool, error)
+	Watched             map[string]bool
+	ToggleWatched       func(context.Context, T) (map[string]bool, error)
 	RemoveHistory       func(context.Context, T) error
 	SearchGroups        []string
 }
@@ -116,9 +118,10 @@ type historyFinished[T item] struct {
 	err   error
 }
 type historyChanged[T item] struct {
-	items []T
-	added bool
-	err   error
+	items        []T
+	watched      map[string]bool
+	watchChanged bool
+	err          error
 }
 type episodeSwitched[T item] struct {
 	episodes     []T
@@ -151,6 +154,27 @@ type contextualItem interface {
 }
 type unavailableItem interface{ Unavailable() bool }
 type cacheableItem interface{ CacheKey() string }
+type watchableItem interface{ WatchIdentity() (string, []string) }
+
+func isWatched(value any, state map[string]bool) bool {
+	watchable, ok := value.(watchableItem)
+	if !ok {
+		return false
+	}
+	identity, keys := watchable.WatchIdentity()
+	if identity == "" {
+		return false
+	}
+	if len(keys) == 0 {
+		return state[identity]
+	}
+	for _, key := range keys {
+		if !state[identity+":"+key] {
+			return false
+		}
+	}
+	return true
+}
 
 type toastExpired struct{ id uint64 }
 type spinnerTick struct{}
@@ -214,7 +238,16 @@ var (
 	unavailableStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#8A8A8A", Dark: "#666666"})
 )
 
-func (m browserModel[T]) Init() tea.Cmd { return nil }
+func (m browserModel[T]) Init() tea.Cmd {
+	if !m.options.InitialSearch || m.options.Requery == nil {
+		return nil
+	}
+	query := m.options.InitialQuery
+	return func() tea.Msg {
+		items, err := m.options.Requery(m.ctx, query)
+		return requeryFinished[T]{items: items, query: query, err: err}
+	}
+}
 
 func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.Cmd) {
 	previousNotice := m.notice
@@ -304,8 +337,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.current().items = msg.items
 			m.current().index = clamp(m.current().index, len(msg.items))
 		}
-		if msg.added {
-			m.notice = "Added to history"
+		if msg.watchChanged {
+			m.options.Watched = msg.watched
+			m.notice = "Watched state updated"
 		} else {
 			m.notice = "Removed from history"
 		}
@@ -452,15 +486,11 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 				}
 			}
 		case "w":
-			if selected, ok := m.selectedRoot(); ok && m.options.ToggleHistory != nil && m.options.History != nil {
+			if selected, ok := m.selectedWatchable(); ok && m.options.ToggleWatched != nil {
 				m.historyBusy = true
 				return m, tea.Batch(func() tea.Msg {
-					added, err := m.options.ToggleHistory(m.ctx, selected)
-					if err != nil {
-						return historyChanged[T]{err: err}
-					}
-					items, err := m.options.History(m.ctx)
-					return historyChanged[T]{items: items, added: added, err: err}
+					watched, err := m.options.ToggleWatched(m.ctx, selected)
+					return historyChanged[T]{watched: watched, watchChanged: true, err: err}
 				}, spinnerCommand())
 			}
 		case "d":
@@ -879,8 +909,8 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 	if m.options.History != nil {
 		bindings = append(bindings, helpBinding{keys: "Ctrl-H", label: "Open history", key: tea.KeyMsg{Type: tea.KeyCtrlH}})
 	}
-	if m.options.ToggleHistory != nil && m.options.History != nil {
-		bindings = append(bindings, helpBinding{keys: "w", label: "Toggle selected title in history", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}})
+	if m.options.ToggleWatched != nil {
+		bindings = append(bindings, helpBinding{keys: "w", label: "Toggle selected item watched", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}})
 	}
 	if m.canSwitchEpisode() {
 		bindings = append(bindings,
@@ -1312,6 +1342,29 @@ func (m browserModel[T]) selectedRoot() (T, bool) {
 	return items[clamp(m.current().index, len(items))].item, true
 }
 
+func (m browserModel[T]) selectedWatchable() (T, bool) {
+	var zero T
+	if m.focusRight {
+		if m.rightHasStreams() {
+			return zero, false
+		}
+		items := m.filteredRight()
+		if len(items) == 0 {
+			return zero, false
+		}
+		selected := items[clamp(m.right.index, len(items))].item
+		_, ok := any(selected).(watchableItem)
+		return selected, ok
+	}
+	items := m.filteredCurrent()
+	if len(items) == 0 {
+		return zero, false
+	}
+	selected := items[clamp(m.current().index, len(items))].item
+	_, ok := any(selected).(watchableItem)
+	return selected, ok
+}
+
 func spinnerCommand() tea.Cmd {
 	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return spinnerTick{} })
 }
@@ -1508,7 +1561,7 @@ func (m browserModel[T]) View() string {
 	visible, widths := paneLayout(width, panes)
 	rendered := make([]string, len(visible))
 	for i, pane := range visible {
-		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode)
+		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode, m.options.Watched)
 	}
 	breadcrumb := m.breadcrumb()
 	helpText := "? keys  m mode  s sort  h/l focus  j/k move  enter open  / filter  q quit"
@@ -1530,8 +1583,8 @@ func (m browserModel[T]) View() string {
 	if m.playing {
 		helpText = "PLAYING  x stop  |  " + helpText
 	}
-	if m.options.ToggleHistory != nil && m.options.History != nil && len(m.levels) == 1 && !m.focusRight {
-		helpText = "w history  " + helpText
+	if m.options.ToggleWatched != nil && (!m.focusRight || !m.rightHasStreams()) {
+		helpText = "w watched  " + helpText
 	}
 	if m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
 		helpText = "d remove  " + helpText
@@ -1567,7 +1620,7 @@ func (m browserModel[T]) View() string {
 	if m.searching {
 		view = overlay(view, activityModal(m.spinnerFrame, "Searching"), width)
 	} else if m.historyBusy {
-		view = overlay(view, activityModal(m.spinnerFrame, "Updating history"), width)
+		view = overlay(view, activityModal(m.spinnerFrame, "Updating watched state"), width)
 	}
 	if m.notice != "" {
 		view = toastOverlay(view, m.notice, width)
@@ -1832,7 +1885,7 @@ func (m browserModel[T]) childTitle(value T) string {
 	return "Items"
 }
 
-func renderBrowserPane[T item](title string, items []indexed[T], selected, width, rows int, active bool, filter string, loading bool, loadErr error, selectedModes map[string]string) string {
+func renderBrowserPane[T item](title string, items []indexed[T], selected, width, rows int, active bool, filter string, loading bool, loadErr error, selectedModes map[string]string, watched map[string]bool) string {
 	contentWidth := max(1, width-2)
 	lines := []string{headerStyle.Render(ansi.Truncate(title, contentWidth, "..."))}
 	if loading {
@@ -1851,6 +1904,11 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 		end := min(len(items), start+rows)
 		for i := start; i < end; i++ {
 			label := plainLabel(items[i].item.Label())
+			indicator := "  "
+			if isWatched(items[i].item, watched) {
+				indicator = "✓ "
+			}
+			label = indicator + label
 			context := ""
 			if contextual, ok := any(items[i].item).(contextualItem); ok {
 				modes := contextual.ContextModes()
@@ -1962,7 +2020,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 	if options.PreferredCached != nil {
 		cachedOnly = *options.PreferredCached
 	}
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, width: 100, height: 24}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

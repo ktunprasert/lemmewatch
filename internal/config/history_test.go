@@ -60,3 +60,20 @@ func TestHistoryCanToggleAndRemoveTitles(t *testing.T) {
 		t.Fatalf("history = %#v, %v", entries, err)
 	}
 }
+
+func TestWatchedTogglesEpisodeSetsAndReadsLegacyEntries(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	entry := HistoryEntry{ID: "tt1", Title: "Silo", Type: "series"}
+	state, err := ToggleWatched(entry, []string{"1:2", "1:1"})
+	if err != nil || !state["tt1"] || !state["tt1:1:1"] || !state["tt1:1:2"] {
+		t.Fatalf("watched state = %#v, %v", state, err)
+	}
+	state, err = ToggleWatched(entry, []string{"1:1", "1:2"})
+	if err != nil || state["tt1:1:1"] || state["tt1:1:2"] || !state["tt1"] {
+		t.Fatalf("cleared season = %#v, %v", state, err)
+	}
+	entries, err := History()
+	if err != nil || len(entries) != 1 || entries[0].Title != "Silo" {
+		t.Fatalf("compatible history = %#v, %v", entries, err)
+	}
+}

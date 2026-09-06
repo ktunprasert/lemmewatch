@@ -180,6 +180,23 @@ func (n navigationChoice) CacheKey() string {
 	}
 	return ""
 }
+func (n navigationChoice) WatchIdentity() (string, []string) {
+	if n.kind == navigationStream || n.media.ID == "" {
+		return "", nil
+	}
+	switch n.kind {
+	case navigationEpisode:
+		return n.media.ID, []string{fmt.Sprintf("%d:%d", n.episode.Season, n.episode.Episode)}
+	case navigationSeason:
+		keys := make([]string, len(n.episodes))
+		for i, episode := range n.episodes {
+			keys[i] = fmt.Sprintf("%d:%d", episode.Season, episode.Episode)
+		}
+		return n.media.ID, keys
+	default:
+		return n.media.ID, nil
+	}
+}
 func (n navigationChoice) StreamInfo() (selector.StreamInfo, bool) {
 	return selector.StreamInfo{Cached: n.stream.Cache == model.CacheCached, CacheApplicable: n.stream.Cache != model.CacheNotApplicable, Playable: n.stream.Playable, Quality: n.stream.Quality}, n.kind == navigationStream
 }
@@ -285,11 +302,7 @@ func (a App) Cache(ctx context.Context, hashes []string) (map[string]bool, error
 }
 
 func (a App) Watch(ctx context.Context, query string) error {
-	items, err := a.Search(ctx, query, "")
-	if err != nil {
-		return err
-	}
-	return a.browseMedia(ctx, items, "Search results", query, []string{string(model.Movie), string(model.Series)})
+	return a.browseMedia(ctx, nil, "Search results", query, []string{string(model.Movie), string(model.Series)}, true)
 }
 
 func (a App) History(ctx context.Context) error {
@@ -297,7 +310,7 @@ func (a App) History(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("read history: %w", err)
 	}
-	return a.browseMedia(ctx, items, "History", "History", nil)
+	return a.browseMedia(ctx, items, "History", "History", nil, false)
 }
 
 func loadHistoryMedia() ([]model.Media, error) {
@@ -320,7 +333,11 @@ func historyMedia(entries []config.HistoryEntry) []model.Media {
 	return items
 }
 
-func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle, initialQuery string, parentGroups []string) error {
+func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle, initialQuery string, parentGroups []string, initialSearch bool) error {
+	watched, err := config.Watched()
+	if err != nil {
+		return fmt.Errorf("read watched state: %w", err)
+	}
 	choices := make([]navigationChoice, len(items))
 	for i, item := range items {
 		choices[i] = navigationChoice{kind: navigationMedia, media: item, playedAt: item.PlayedAt}
@@ -338,7 +355,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		}
 		return choices, nil
 	}
-	_, err := selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
+	_, err = selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
 		switch selected.kind {
 		case navigationMedia:
 			selectedProvider, err := a.provider(providerID)
@@ -347,7 +364,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			}
 			if selected.media.Type == model.Movie {
 				streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Movie, ID: selected.media.ID, Title: selected.media.Name})
-				return streamChoices(selected.media, streams, streamErr)
+				return streamChoices(selected.media, model.Episode{}, streams, streamErr)
 			}
 			episodes, err := a.Catalog.Episodes(ctx, selected.media.ID)
 			if err != nil {
@@ -384,13 +401,14 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 				return nil, err
 			}
 			streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Series, ID: selected.episode.ID, Title: selected.media.Name, Season: selected.episode.Season, Episode: selected.episode.Episode})
-			return streamChoices(selected.media, streams, streamErr)
+			return streamChoices(selected.media, selected.episode, streams, streamErr)
 		default:
 			return nil, fmt.Errorf("item cannot be opened")
 		}
 	}, selector.BrowserOptions[navigationChoice]{
 		InitialTitle:      initialTitle,
 		InitialQuery:      initialQuery,
+		InitialSearch:     initialSearch,
 		ParentGroups:      parentGroups,
 		SearchGroups:      []string{string(model.Movie), string(model.Series)},
 		PreferredGroup:    preferences.MediaTab,
@@ -488,8 +506,16 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			if err != nil {
 				return err
 			}
-			if err := config.RecordHistory(config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}); err != nil {
+			entry := config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}
+			if selected.episode.ID != "" {
+				entry.Episodes = []string{fmt.Sprintf("%d:%d", selected.episode.Season, selected.episode.Episode)}
+			}
+			if err := config.RecordHistory(entry); err != nil {
 				return fmt.Errorf("record history: %w", err)
+			}
+			watched[selected.media.ID] = true
+			for _, key := range entry.Episodes {
+				watched[selected.media.ID+":"+key] = true
 			}
 			if err := a.Player.Play(playContext, playback); err != nil {
 				if playContext.Err() != nil {
@@ -508,12 +534,15 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			}
 			choices := make([]navigationChoice, len(media))
 			for i, item := range media {
-				choices[i] = navigationChoice{kind: navigationMedia, media: item}
+				choices[i] = navigationChoice{kind: navigationMedia, media: item, playedAt: item.PlayedAt}
 			}
 			return choices, nil
 		},
-		ToggleHistory: func(_ context.Context, selected navigationChoice) (bool, error) {
-			return config.ToggleHistory(config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)})
+		Watched: watched,
+		ToggleWatched: func(_ context.Context, selected navigationChoice) (map[string]bool, error) {
+			_, keys := selected.WatchIdentity()
+			state, err := config.ToggleWatched(config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}, keys)
+			return map[string]bool(state), err
 		},
 		RemoveHistory: func(_ context.Context, selected navigationChoice) error {
 			return config.RemoveHistory(selected.media.ID)
@@ -525,7 +554,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 	return nil
 }
 
-func streamChoices(media model.Media, streams []model.Stream, streamErr error) ([]navigationChoice, error) {
+func streamChoices(media model.Media, episode model.Episode, streams []model.Stream, streamErr error) ([]navigationChoice, error) {
 	if streamErr != nil {
 		return nil, streamErr
 	}
@@ -534,7 +563,7 @@ func streamChoices(media model.Media, streams []model.Stream, streamErr error) (
 	}
 	result := make([]navigationChoice, len(streams))
 	for i, stream := range streams {
-		result[i] = navigationChoice{kind: navigationStream, media: media, stream: stream}
+		result[i] = navigationChoice{kind: navigationStream, media: media, episode: episode, stream: stream}
 	}
 	return result, nil
 }
