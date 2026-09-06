@@ -440,6 +440,29 @@ func TestBrowserLoadsAndChoosesTerminal(t *testing.T) {
 	}
 }
 
+func TestUppercaseHFocusesFarLeftPane(t *testing.T) {
+	m := newBrowser(testChoice{label: "Series"})
+	m.levels = append(m.levels,
+		pane[testChoice]{title: "Seasons", items: []testChoice{{label: "Season 1"}}},
+		pane[testChoice]{title: "Episodes", items: []testChoice{{label: "Episode 1"}}},
+	)
+	m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "stream", terminal: true}}}
+	m.focusRight = true
+	m.crumbs = []string{"Series", "Season 1", "Episode 1"}
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	m = next.(browserModel[testChoice])
+	if m.focusRight || len(m.levels) != 1 || m.current().title != "Search" {
+		t.Fatalf("home pane state = %#v", m)
+	}
+	if m.right.title != "Seasons" || len(m.crumbs) != 0 {
+		t.Fatalf("home pane preview = %#v", m)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "H home") {
+		t.Fatalf("home hint missing: %q", view)
+	}
+}
+
 func TestRightOpensSelectedLeftItem(t *testing.T) {
 	m := newBrowser(testChoice{label: "movie"})
 	m.right.items = []testChoice{{label: "stale stream"}}

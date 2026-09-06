@@ -547,6 +547,11 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			}
 		case "left", "h":
 			m.back()
+		case "H":
+			for m.focusRight || len(m.levels) > 1 {
+				m.back()
+			}
+			m.crumbs = nil
 		case "right", "l":
 			if !m.loading {
 				return m.confirm()
@@ -884,6 +889,7 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 	bindings := []helpBinding{
 		{keys: "Enter / Right / l", label: "Open or confirm", key: tea.KeyMsg{Type: tea.KeyEnter}},
 		{keys: "Left / h / Esc", label: "Go back", key: tea.KeyMsg{Type: tea.KeyEscape}},
+		{keys: "H", label: "Go Home", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}},
 		{keys: "Up / k", label: "Move up", key: tea.KeyMsg{Type: tea.KeyUp}},
 		{keys: "Down / j", label: "Move down", key: tea.KeyMsg{Type: tea.KeyDown}},
 		{keys: "PgUp", label: "Previous page", key: tea.KeyMsg{Type: tea.KeyPgUp}},
@@ -1579,15 +1585,15 @@ func (m browserModel[T]) View() string {
 		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode, m.options.Watched)
 	}
 	breadcrumb := m.breadcrumb()
-	helpText := "? keys  m mode  s sort  h/l focus  j/k move  enter open  / filter  q quit"
+	helpText := "? keys  m mode  s sort  h/l focus  H home  j/k move  enter open  / filter  q quit"
 	if m.options.Requery != nil {
-		helpText = "? keys  m mode  s sort  h/l focus  j/k move  enter open  ctrl-h history  ctrl-p search  / filter  q quit"
+		helpText = "? keys  m mode  s sort  h/l focus  H home  j/k move  enter open  ctrl-h history  ctrl-p search  / filter  q quit"
 	}
 	if len(m.options.ParentGroups) > 1 {
 		helpText = "tab movie/series  " + helpText
 	}
 	if m.focusRight {
-		helpText = "h/l focus  j/k move  enter open/select  / filter  esc back"
+		helpText = "h/l focus  H home  j/k move  enter open/select  / filter  esc back"
 		if m.canSwitchEpisode() {
 			helpText = "n/p episode  " + helpText
 		}
