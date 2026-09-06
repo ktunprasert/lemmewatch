@@ -1972,7 +1972,11 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 			}
 			row := "  " + label
 			if i == selected {
-				row = selectedStyle.Width(contentWidth).Render("> " + label)
+				style := selectedStyle
+				if !active {
+					style = inactiveSelected
+				}
+				row = style.Width(contentWidth).Render("> " + label)
 			}
 			lines = append(lines, row)
 		}
