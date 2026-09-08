@@ -1298,3 +1298,40 @@ func TestBrowserBreadcrumbUsesActiveQuery(t *testing.T) {
 		t.Fatalf("breadcrumb = %q", view)
 	}
 }
+
+func TestPlaybackProgressUpdatesToast(t *testing.T) {
+	m := newBrowser(testChoice{label: "parent"})
+	m.cachedOnly = false
+	m.focusRight = true
+	m.right.items = []testChoice{{label: "uncached", terminal: true, playable: true, quality: 1080}}
+	ch := make(chan string, 4)
+	m.options.Progress = func() <-chan string { return ch }
+	m.options.Play = func(context.Context, testChoice) error {
+		ch <- "Downloading torrent: 40%"
+		return nil
+	}
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	batch, ok := command().(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatalf("commands = %#v", command())
+	}
+	done := make(chan tea.Msg, 1)
+	go func() { done <- batch[0]() }()
+	progress, ok := batch[1]().(playProgress)
+	if !ok {
+		t.Fatalf("progress msg = %#v", progress)
+	}
+	if progress.text != "Downloading torrent: 40%" {
+		t.Fatalf("progress = %q", progress.text)
+	}
+	next, tick := next.Update(progress)
+	m = next.(browserModel[testChoice])
+	if m.notice != "Downloading torrent: 40%" || tick == nil {
+		t.Fatalf("notice = %q, tick = %#v", m.notice, tick)
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Downloading torrent: 40%") {
+		t.Fatalf("toast missing progress: %q", view)
+	}
+	<-done
+}

@@ -38,6 +38,7 @@ type BrowserOptions[T item] struct {
 	SaveMode            func(string, string) error
 	ChildTitle          func(T) string
 	Play                func(context.Context, T) error
+	Progress            func() <-chan string
 	Requery             func(context.Context, string) ([]T, error)
 	History             func(context.Context) ([]T, error)
 	Watched             map[string]bool
@@ -109,6 +110,8 @@ type loaded[T item] struct {
 }
 
 type playFinished struct{ err error }
+
+type playProgress struct{ text string }
 type requeryFinished[T item] struct {
 	items []T
 	err   error
@@ -231,6 +234,7 @@ type browserModel[T item] struct {
 	choice              T
 	playing             bool
 	stopPlaying         context.CancelFunc
+	progressCh          <-chan string
 	loadCache           map[string][]T
 	loadID              uint64
 	help                help.Model
@@ -264,7 +268,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		if updated.notice != "" && updated.notice != previousNotice {
 			updated.toastID++
 			id := updated.toastID
-			if command == nil {
+			if command == nil && !(updated.playing && updated.progressCh != nil) {
 				command = tea.Tick(4*time.Second, func(time.Time) tea.Msg { return toastExpired{id: id} })
 			}
 		}
@@ -294,9 +298,16 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		} else if msg.err != nil {
 			m.notice = "Load failed: " + msg.err.Error()
 		}
+	case playProgress:
+		if m.progressCh == nil {
+			break
+		}
+		m.notice = msg.text
+		return m, listenProgress(m.progressCh)
 	case playFinished:
 		m.playing = false
 		m.stopPlaying = nil
+		m.progressCh = nil
 		if msg.err == nil {
 			m.notice = "Playback launched"
 		} else if errors.Is(msg.err, context.Canceled) {
@@ -381,7 +392,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.loadCache[msg.key] = msg.streams
 		}
 	case spinnerTick:
-		if m.searching || m.historyBusy {
+		if m.searching || m.historyBusy || (m.playing && m.progressCh != nil) {
 			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
 			return m, spinnerCommand()
 		}
@@ -1107,8 +1118,11 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 			if stream, ok := any(selected).(streamItem); ok {
 				info, isStream := stream.StreamInfo()
 				if isStream && !info.Playable {
-					m.notice = "Stream is not playable"
-					return m, nil
+					if !info.CacheApplicable {
+						m.notice = "Stream is not playable"
+						return m, nil
+					}
+					m.notice = "Queueing uncached torrent; playback starts after download..."
 				}
 			}
 			if m.options.Play == nil {
@@ -1124,6 +1138,11 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 			m.playing = true
 			m.stopPlaying = cancel
 			m.notice = "Starting playback..."
+			var progressCmd tea.Cmd
+			if m.options.Progress != nil {
+				m.progressCh = m.options.Progress()
+				progressCmd = listenProgress(m.progressCh)
+			}
 			if watchable, ok := any(selected).(watchableItem); ok {
 				identity, keys := watchable.WatchIdentity()
 				if identity != "" {
@@ -1136,9 +1155,13 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			return m, func() tea.Msg {
+			playCmd := func() tea.Msg {
 				return playFinished{err: m.options.Play(playContext, selected)}
 			}
+			if progressCmd == nil {
+				return m, playCmd
+			}
+			return m, tea.Batch(playCmd, progressCmd)
 		}
 		m.levels = append(m.levels, m.right)
 		m.focusRight = false
@@ -1392,6 +1415,16 @@ func spinnerCommand() tea.Cmd {
 	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return spinnerTick{} })
 }
 
+func listenProgress(ch <-chan string) tea.Cmd {
+	return func() tea.Msg {
+		text, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return playProgress{text: text}
+	}
+}
+
 func (m *browserModel[T]) current() *pane[T] { return &m.levels[len(m.levels)-1] }
 func (m browserModel[T]) pageSize() int      { return max(1, m.height-6) }
 
@@ -1623,7 +1656,11 @@ func (m browserModel[T]) View() string {
 		view = overlay(view, activityModal(m.spinnerFrame, "Updating watched state"), width)
 	}
 	if m.notice != "" {
-		view = toastOverlay(view, m.notice, width)
+		text := m.notice
+		if m.playing && m.progressCh != nil {
+			text = spinnerFrames[m.spinnerFrame%len(spinnerFrames)] + " " + text
+		}
+		view = toastOverlay(view, text, width)
 	}
 	return "\x1b]0;" + plainLabel(breadcrumb) + "\x07" + view
 }

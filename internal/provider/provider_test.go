@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
+	"time"
 
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/stremio"
@@ -128,5 +130,42 @@ func TestTorBoxProviderOwnsCacheEnrichment(t *testing.T) {
 	}
 	if len(streams) != 1 || streams[0].Provider != TorBoxID || streams[0].Cache != model.CacheCached || !streams[0].Playable {
 		t.Fatalf("streams = %#v", streams)
+	}
+}
+
+func TestTorBoxQueueTorrentWaitsForDownload(t *testing.T) {
+	hash := "0123456789abcdef0123456789abcdef01234567"
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/torrents/createtorrent":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"torrent_id":7}}`))
+		case "/torrents/mylist":
+			if r.URL.Query().Get("id") == "" {
+				_, _ = w.Write([]byte(`{"success":true,"data":[]}`))
+				return
+			}
+			polls++
+			progress := 0.25
+			if polls >= 2 {
+				progress = 1
+			}
+			_, _ = w.Write([]byte(`{"success":true,"data":{"id":7,"progress":` + strconv.FormatFloat(progress, 'f', -1, 64) + `}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	p := TorBox{TorBoxClient: torbox.Client{BaseURL: server.URL, Token: "token", HTTP: server.Client(), PollInterval: time.Millisecond}}
+
+	var updates []QueueProgress
+	err := p.QueueTorrent(context.Background(), model.Stream{Provider: TorBoxID, Hash: hash}, func(p QueueProgress) {
+		updates = append(updates, p)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if polls < 2 || len(updates) == 0 || updates[0].TorrentID != 7 {
+		t.Fatalf("polls = %d, updates = %#v", polls, updates)
 	}
 }

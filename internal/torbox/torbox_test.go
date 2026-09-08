@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestVideoFilesPreserveAddonIndex(t *testing.T) {
@@ -88,5 +91,79 @@ func TestCachedDeduplicatesHashesAndSetsHeaders(t *testing.T) {
 	}
 	if !result[hash] {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestQueueReturnsTorrentID(t *testing.T) {
+	hash := "0123456789abcdef0123456789abcdef01234567"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/torrents/createtorrent" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"torrent_id":42}}`))
+	}))
+	defer server.Close()
+
+	id, err := (Client{BaseURL: server.URL, Token: "token", HTTP: server.Client()}).Queue(context.Background(), hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != 42 {
+		t.Fatalf("id = %d", id)
+	}
+}
+
+func TestWaitDownloadedPollsUntilFinished(t *testing.T) {
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/torrents/mylist" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		polls++
+		progress := 0.5
+		if polls >= 3 {
+			progress = 1
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":42,"progress":` + strconv.FormatFloat(progress, 'f', -1, 64) + `}}`))
+	}))
+	defer server.Close()
+
+	var progress []float64
+	err := (Client{BaseURL: server.URL, Token: "token", HTTP: server.Client(), PollInterval: time.Millisecond}).WaitDownloaded(context.Background(), 42, func(p float64) {
+		progress = append(progress, p)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if polls < 3 || len(progress) == 0 {
+		t.Fatalf("polls = %d, progress = %#v", polls, progress)
+	}
+}
+
+func TestWaitDownloadedFailsAfterConsecutiveErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	err := (Client{BaseURL: server.URL, Token: "token", HTTP: server.Client(), PollInterval: time.Millisecond}).WaitDownloaded(context.Background(), 42, nil)
+	if err == nil {
+		t.Fatal("expected error after repeated failures")
+	}
+}
+
+func TestFindMatchesHashInMyList(t *testing.T) {
+	hash := "0123456789abcdef0123456789abcdef01234567"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":9,"hash":"other"},{"id":7,"hash":"` + hash + `"}]}`))
+	}))
+	defer server.Close()
+
+	id, err := (Client{BaseURL: server.URL, Token: "token", HTTP: server.Client()}).Find(context.Background(), strings.ToUpper(hash))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != 7 {
+		t.Fatalf("id = %d", id)
 	}
 }

@@ -347,6 +347,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 	}
 	preferences := config.Load()
 	providerID := a.Provider
+	var progressCh chan string
 	requery := func(searchContext context.Context, query string) ([]navigationChoice, error) {
 		results, err := a.searchCatalog(searchContext, query, "")
 		if err != nil {
@@ -500,10 +501,29 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			preferences.DetailModes[group] = mode
 			return config.Save(preferences)
 		},
+		Progress: func() <-chan string {
+			progressCh = make(chan string, 16)
+			return progressCh
+		},
 		Play: func(playContext context.Context, selected navigationChoice) error {
+			ch := progressCh
+			defer close(ch)
 			streamProvider, err := a.provider(selected.stream.Provider)
 			if err != nil {
 				return err
+			}
+			if queuer, ok := streamProvider.(provider.QueueTorrenter); ok && selected.stream.Cache == model.CacheUncached {
+				queueContext, cancel := context.WithTimeout(playContext, 30*time.Minute)
+				defer cancel()
+				ch <- "Queueing torrent..."
+				if err := queuer.QueueTorrent(queueContext, selected.stream, func(p provider.QueueProgress) {
+					if p.Progress > 0 {
+						ch <- fmt.Sprintf("Downloading torrent: %.0f%%", p.Progress*100)
+					}
+				}); err != nil {
+					return err
+				}
+				ch <- "Torrent downloaded; starting playback..."
 			}
 			playback, err := streamProvider.Resolve(playContext, selected.stream)
 			if err != nil {

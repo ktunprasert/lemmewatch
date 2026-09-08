@@ -15,12 +15,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Client struct {
-	BaseURL string
-	Token   string
-	HTTP    *http.Client
+	BaseURL      string
+	Token        string
+	HTTP         *http.Client
+	PollInterval time.Duration
 }
 
 type envelope[T any] struct {
@@ -30,8 +32,12 @@ type envelope[T any] struct {
 }
 
 type torrent struct {
-	ID    int64  `json:"id"`
-	Files []file `json:"files"`
+	ID               int64   `json:"id"`
+	Hash             string  `json:"hash"`
+	Files            []file  `json:"files"`
+	Progress         float64 `json:"progress"`
+	DownloadFinished bool    `json:"download_finished"`
+	DownloadPresent  bool    `json:"download_present"`
 }
 
 type file struct {
@@ -99,6 +105,108 @@ func (c Client) Cached(ctx context.Context, hashes []string) (map[string]bool, e
 	return result, nil
 }
 
+func (c Client) Queue(ctx context.Context, hash string) (int64, error) {
+	if !validHash(hash) {
+		return 0, fmt.Errorf("invalid torrent info hash")
+	}
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	_ = form.WriteField("magnet", "magnet:?xt=urn:btih:"+hash)
+	if err := form.Close(); err != nil {
+		return 0, fmt.Errorf("TorBox torrent request: %w", err)
+	}
+	u, err := c.endpoint("torrents/createtorrent")
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), &body)
+	if err != nil {
+		return 0, fmt.Errorf("TorBox torrent request: %w", err)
+	}
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	c.authorize(req)
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return 0, requestError("TorBox torrent creation", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return 0, fmt.Errorf("TorBox torrent creation: HTTP %d", res.StatusCode)
+	}
+	var created envelope[struct {
+		TorrentID int64 `json:"torrent_id"`
+	}]
+	if json.NewDecoder(res.Body).Decode(&created) != nil || !created.Success || created.Data.TorrentID <= 0 {
+		return 0, fmt.Errorf("TorBox torrent creation returned invalid response")
+	}
+	return created.Data.TorrentID, nil
+}
+
+func (c Client) Find(ctx context.Context, hash string) (int64, error) {
+	if !validHash(hash) {
+		return 0, fmt.Errorf("invalid torrent info hash")
+	}
+	u, err := c.endpoint("torrents/mylist")
+	if err != nil {
+		return 0, err
+	}
+	var listed envelope[[]torrent]
+	if err := c.get(ctx, u, &listed); err != nil {
+		return 0, fmt.Errorf("TorBox torrent lookup: %w", err)
+	}
+	for _, item := range listed.Data {
+		if strings.EqualFold(item.Hash, hash) {
+			return item.ID, nil
+		}
+	}
+	return 0, nil
+}
+
+func (t torrent) finished() bool {
+	return t.DownloadFinished || t.DownloadPresent || t.Progress >= 1
+}
+
+func (c Client) WaitDownloaded(ctx context.Context, torrentID int64, notify func(progress float64)) error {
+	if torrentID <= 0 {
+		return fmt.Errorf("invalid torrent id")
+	}
+	interval := c.PollInterval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	u, err := c.endpoint("torrents/mylist")
+	if err != nil {
+		return err
+	}
+	q := u.Query()
+	q.Set("id", strconv.FormatInt(torrentID, 10))
+	u.RawQuery = q.Encode()
+	const maxConsecutiveFailures = 5
+	failures := 0
+	for {
+		var listed envelope[torrent]
+		if err := c.get(ctx, u, &listed); err == nil {
+			failures = 0
+			if listed.Data.finished() {
+				return nil
+			}
+			if notify != nil {
+				notify(listed.Data.Progress)
+			}
+		} else {
+			failures++
+			if failures >= maxConsecutiveFailures {
+				return fmt.Errorf("TorBox download status: %w", err)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}
+
 func (c Client) Resolve(ctx context.Context, hash string, videoIndex int) (string, error) {
 	return c.ResolveFile(ctx, hash, videoIndex, "", 0, 0)
 }
@@ -110,40 +218,14 @@ func (c Client) ResolveFile(ctx context.Context, hash string, videoIndex int, fi
 	if videoIndex < 0 {
 		return "", fmt.Errorf("video file index must not be negative")
 	}
-	var body bytes.Buffer
-	form := multipart.NewWriter(&body)
-	_ = form.WriteField("magnet", "magnet:?xt=urn:btih:"+hash)
-	if err := form.Close(); err != nil {
-		return "", fmt.Errorf("TorBox torrent request: %w", err)
-	}
-	u, err := c.endpoint("torrents/createtorrent")
+	torrentID, err := c.Queue(ctx, hash)
 	if err != nil {
 		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), &body)
-	if err != nil {
-		return "", fmt.Errorf("TorBox torrent request: %w", err)
-	}
-	req.Header.Set("Content-Type", form.FormDataContentType())
-	c.authorize(req)
-	res, err := c.HTTP.Do(req)
-	if err != nil {
-		return "", requestError("TorBox torrent creation", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return "", fmt.Errorf("TorBox torrent creation: HTTP %d", res.StatusCode)
-	}
-	var created envelope[struct {
-		TorrentID int64 `json:"torrent_id"`
-	}]
-	if json.NewDecoder(res.Body).Decode(&created) != nil || !created.Success {
-		return "", fmt.Errorf("TorBox torrent creation returned invalid response")
 	}
 
 	listURL, _ := c.endpoint("torrents/mylist")
 	q := listURL.Query()
-	q.Set("id", strconv.FormatInt(created.Data.TorrentID, 10))
+	q.Set("id", strconv.FormatInt(torrentID, 10))
 	listURL.RawQuery = q.Encode()
 	var listed envelope[torrent]
 	if err := c.get(ctx, listURL, &listed); err != nil {
@@ -158,7 +240,7 @@ func (c Client) ResolveFile(ctx context.Context, hash string, videoIndex int, fi
 	dlURL, _ := c.endpoint("torrents/requestdl")
 	q = dlURL.Query()
 	q.Set("token", c.Token)
-	q.Set("torrent_id", strconv.FormatInt(created.Data.TorrentID, 10))
+	q.Set("torrent_id", strconv.FormatInt(torrentID, 10))
 	q.Set("file_id", strconv.FormatInt(selected.ID, 10))
 	q.Set("append_name", "true")
 	dlURL.RawQuery = q.Encode()

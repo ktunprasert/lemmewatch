@@ -33,6 +33,15 @@ type Provider interface {
 	Resolve(context.Context, model.Stream) (model.Playback, error)
 }
 
+type QueueProgress struct {
+	TorrentID int64
+	Progress  float64
+}
+
+type QueueTorrenter interface {
+	QueueTorrent(ctx context.Context, stream model.Stream, notify func(QueueProgress)) error
+}
+
 type TorBox struct {
 	StreamsClient stremio.Client
 	TorBoxClient  torbox.Client
@@ -90,6 +99,28 @@ func (p TorBox) Resolve(ctx context.Context, stream model.Stream) (model.Playbac
 		return model.Playback{}, err
 	}
 	return model.Playback{URL: resolved}, nil
+}
+
+func (p TorBox) QueueTorrent(ctx context.Context, stream model.Stream, notify func(QueueProgress)) error {
+	if stream.Provider != p.ID() || stream.Hash == "" {
+		return fmt.Errorf("invalid TorBox stream")
+	}
+	torrentID, err := p.TorBoxClient.Find(ctx, stream.Hash)
+	if err != nil {
+		return err
+	}
+	if torrentID == 0 {
+		torrentID, err = p.TorBoxClient.Queue(ctx, stream.Hash)
+		if err != nil {
+			return err
+		}
+	}
+	if notify != nil {
+		notify(QueueProgress{TorrentID: torrentID})
+	}
+	return p.TorBoxClient.WaitDownloaded(ctx, torrentID, func(progress float64) {
+		notify(QueueProgress{TorrentID: torrentID, Progress: progress})
+	})
 }
 
 type WebStreamr struct {

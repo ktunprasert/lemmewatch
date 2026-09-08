@@ -112,7 +112,10 @@ pane filter before navigating back.
 While filtering, Ctrl-W clears a word and Ctrl-U clears the line. In the torrent
 pane, `c` toggles cached/all for TorBox and `v` cycles quality; quality preference persists
 under the XDG config directory. The active Movie/Series tab persists there too.
-Uncached TorBox playback is not implemented yet. Cache filtering does not apply
+Selecting an uncached TorBox stream queues the torrent (reusing an existing
+copy on TorBox without re-adding), shows a spinning progress toast while the
+download runs (up to 30 minutes), and starts playback when ready. Cache
+filtering does not apply
 to direct WebStreamr or Pengu streams.
 
 Playback leaves the browser open. Press `s` to stop a directly managed player,
