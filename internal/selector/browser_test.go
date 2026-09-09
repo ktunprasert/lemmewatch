@@ -1335,3 +1335,57 @@ func TestPlaybackProgressUpdatesToast(t *testing.T) {
 	}
 	<-done
 }
+
+func TestPageStopsAtLastAvailableItem(t *testing.T) {
+	items := []testChoice{
+		{label: "Episode 1", unavailable: false},
+		{label: "Episode 2", unavailable: false},
+		{label: "Episode 3", unavailable: true},
+		{label: "Episode 4", unavailable: true},
+	}
+	m := newBrowser(items...)
+
+	m.page(2)
+	if m.current().index != 1 {
+		t.Fatalf("paged into unavailable: index = %d", m.current().index)
+	}
+	m.page(2)
+	if m.current().index != 3 {
+		t.Fatalf("page did not move past last available: index = %d", m.current().index)
+	}
+	m.page(-10)
+	if m.current().index != 0 {
+		t.Fatalf("page did not stop at first available: index = %d", m.current().index)
+	}
+	m.page(10)
+	if m.current().index != 1 {
+		t.Fatalf("page did not stop at last available: index = %d", m.current().index)
+	}
+	m.page(10)
+	if m.current().index != 3 {
+		t.Fatalf("page did not move past last available: index = %d", m.current().index)
+	}
+}
+
+func TestPagePastUnavailableKeepsMoving(t *testing.T) {
+	items := []testChoice{
+		{label: "Episode 1", unavailable: true},
+		{label: "Episode 2", unavailable: true},
+		{label: "Episode 3", unavailable: false},
+	}
+	m := newBrowser(items...)
+	m.current().index = 1
+
+	m.page(1)
+	if m.current().index != 2 {
+		t.Fatalf("page did not move to available item: index = %d", m.current().index)
+	}
+	m.page(-5)
+	if m.current().index != 0 {
+		t.Fatalf("page did not move past first available: index = %d", m.current().index)
+	}
+	m.page(5)
+	if m.current().index != 2 {
+		t.Fatalf("page did not stop at last available: index = %d", m.current().index)
+	}
+}

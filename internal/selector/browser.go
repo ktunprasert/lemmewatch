@@ -514,13 +514,13 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		case "down", "j":
 			m.move(1)
 		case "pgup":
-			m.move(-m.pageSize())
+			m.page(-m.pageSize())
 		case "pgdown":
-			m.move(m.pageSize())
+			m.page(m.pageSize())
 		case "ctrl+d":
-			m.move(max(1, m.pageSize()/2))
+			m.page(max(1, m.pageSize()/2))
 		case "ctrl+u":
-			m.move(-max(1, m.pageSize()/2))
+			m.page(-max(1, m.pageSize()/2))
 		case "enter":
 			return m.confirm()
 		}
@@ -772,6 +772,42 @@ func (m *browserModel[T]) move(delta int) {
 	} else {
 		m.current().index = clamp(m.current().index+delta, len(m.filteredCurrent()))
 	}
+}
+
+func (m *browserModel[T]) page(delta int) {
+	if m.focusRight {
+		items := m.filteredRight()
+		first, last := availableBounds(items)
+		m.right.index = boundedPage(m.right.index, delta, len(items), first, last)
+	} else {
+		items := m.filteredCurrent()
+		first, last := availableBounds(items)
+		m.current().index = boundedPage(m.current().index, delta, len(items), first, last)
+	}
+}
+
+func availableBounds[T item](items []indexed[T]) (first, last int) {
+	first, last = -1, -1
+	for i, value := range items {
+		if !itemUnavailable(value.item) {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	return first, last
+}
+
+func boundedPage(index, delta, length, first, last int) int {
+	target := clamp(index+delta, length)
+	if delta > 0 && last >= 0 && index < last && target > last {
+		return last
+	}
+	if delta < 0 && first >= 0 && index > first && target < first {
+		return first
+	}
+	return target
 }
 
 func (m browserModel[T]) inHistoryRoot() bool {
