@@ -25,3 +25,16 @@ func TestHelpRowHighlightsKeysAndShowsVersion(t *testing.T) {
 		t.Fatalf("description not faint: %q", styled)
 	}
 }
+
+func TestSearchOverlayUsesSharedHelpStyles(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	m.width = 100
+	m.overlay = overlayQuery
+	view := m.View()
+	if !strings.Contains(view, headerStyle.Render("enter")) {
+		t.Fatalf("overlay key not accent styled: %q", view)
+	}
+	if !strings.Contains(view, hintStyle.Render("search")) {
+		t.Fatalf("overlay description not faint: %q", view)
+	}
+}

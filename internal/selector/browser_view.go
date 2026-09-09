@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -51,19 +52,25 @@ func (m browserModel[T]) View() string {
 		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode, m.options.Watched)
 	}
 	breadcrumb := m.breadcrumb()
-	version := hintStyle.Render(m.options.Version)
-	m.help.Width = max(1, width-lipgloss.Width(version)-1)
-	helpText := m.help.ShortHelpView(m.shortHelp(browserKeys()))
-	gap := max(0, width-lipgloss.Width(helpText)-lipgloss.Width(version))
-	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + helpText + strings.Repeat(" ", gap) + version + "\n"
+	helpText := renderHelpLine(m.help, width, m.shortHelp(browserKeys()), m.options.Version)
+	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + helpText + "\n"
 	var modal string
 	switch m.overlay {
 	case overlayHelp:
 		modal = m.helpModal()
 	case overlayCustomPlayer:
-		modal = inputModal("Custom player", m.customPlayerValue, "Enter save  Esc cancel")
+		modal = inputModal("Custom player", m.customPlayerValue, []key.Binding{
+			hintBinding("enter", "save"),
+			hintBinding("esc", "cancel"),
+			hintBinding("ctrl-u", "clear"),
+		})
 	case overlayProviderAPIKey:
-		modal = inputModal("TorBox API key", strings.Repeat("*", len([]rune(m.providerAPIKeyValue))), "Enter save  Esc cancel")
+		modal = inputModal("TorBox API key", strings.Repeat("*", len([]rune(m.providerAPIKeyValue))), []key.Binding{
+			hintBinding("enter", "save"),
+			hintBinding("esc", "cancel"),
+			hintBinding("ctrl-w", "word"),
+			hintBinding("ctrl-u", "clear"),
+		})
 	case overlaySettings:
 		modal = m.settingsModal()
 	case overlaySort:
@@ -71,13 +78,23 @@ func (m browserModel[T]) View() string {
 	case overlayMode:
 		modal = modeModal(m.contextModes())
 	case overlayQuery:
-		modal = inputModal("Search", m.query, "Enter search  Esc cancel")
+		modal = inputModal("Search", m.query, []key.Binding{
+			hintBinding("enter", "search"),
+			hintBinding("esc", "cancel"),
+			hintBinding("ctrl-w", "word"),
+			hintBinding("ctrl-u", "clear"),
+		})
 	case overlayFilter:
 		filter := current.filter
 		if m.focusRight {
 			filter = m.right.filter
 		}
-		modal = inputModal("Filter active pane", filter, "Enter apply  Esc clear")
+		modal = inputModal("Filter active pane", filter, []key.Binding{
+			hintBinding("enter", "apply"),
+			hintBinding("esc", "clear"),
+			hintBinding("ctrl-w", "word"),
+			hintBinding("ctrl-u", "clear"),
+		})
 	}
 	view := base
 	if modal != "" {
@@ -183,7 +200,9 @@ func sortModal(torrents, history bool) string {
 			"d/r Default ranking",
 		}
 	}
-	lines = append(lines, "", hintStyle.Render("Esc cancel"))
+	lines = append(lines, "", renderHelpLine(newHelpModel(), 32, []key.Binding{
+		hintBinding("esc", "cancel"),
+	}, ""))
 	return activeBorder.Padding(0, 2).Render(strings.Join(lines, "\n"))
 }
 

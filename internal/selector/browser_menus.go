@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -86,7 +87,9 @@ func modeModal(modes []ContextMode) string {
 	for _, mode := range modes {
 		lines = append(lines, fmt.Sprintf("[%s] %s", mode.Key, mode.Name))
 	}
-	lines = append(lines, "", hintStyle.Render("Choose mode  Esc cancel"))
+	lines = append(lines, "", renderHelpLine(newHelpModel(), 32, []key.Binding{
+		hintBinding("esc", "cancel"),
+	}, ""))
 	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
@@ -586,13 +589,13 @@ func (m browserModel[T]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func inputModal(title, value, help string) string {
+func inputModal(title, value string, bindings []key.Binding) string {
 	input := ansi.Truncate(value, 48, "...") + "_"
 	return activeBorder.Width(50).Padding(0, 1).Render(strings.Join([]string{
 		headerStyle.Render(title),
 		input,
 		"",
-		hintStyle.Render(help + "  Ctrl-W word  Ctrl-U line"),
+		renderHelpLine(newHelpModel(), 50, bindings, ""),
 	}, "\n"))
 }
 
@@ -626,7 +629,12 @@ func (m browserModel[T]) helpModal() string {
 			lines = append(lines, line)
 		}
 	}
-	lines = append(lines, "", hintStyle.Render("Type to filter  Up/Down select  Enter run  Esc close"))
+	lines = append(lines, "", renderHelpLine(newHelpModel(), 50, []key.Binding{
+		hintBinding("type", "filter"),
+		hintBinding("↑/↓", "select"),
+		hintBinding("enter", "run"),
+		hintBinding("esc", "close"),
+	}, ""))
 	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
@@ -676,6 +684,11 @@ func (m browserModel[T]) settingsModal() string {
 		}
 		lines = append(lines, line)
 	}
-	lines = append(lines, "", hintStyle.Render("Up/Down item  Left/Right change  Enter edit player  Esc close"))
+	lines = append(lines, "", renderHelpLine(newHelpModel(), 54, []key.Binding{
+		hintBinding("↑/↓", "item"),
+		hintBinding("←/→", "change"),
+		hintBinding("enter", "edit"),
+		hintBinding("esc", "close"),
+	}, ""))
 	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
 }

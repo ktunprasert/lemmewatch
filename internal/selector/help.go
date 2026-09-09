@@ -1,8 +1,11 @@
 package selector
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type browserKeyMap struct {
@@ -63,6 +66,26 @@ func newHelpModel() help.Model {
 		Ellipsis:       hintStyle,
 	}
 	return h
+}
+
+func hintBinding(keys, description string) key.Binding {
+	return key.NewBinding(key.WithKeys(keys), key.WithHelp(keys, description))
+}
+
+func renderHelpLine(model help.Model, width int, bindings []key.Binding, right string) string {
+	right = hintStyle.Render(right)
+	rightWidth := lipgloss.Width(right)
+	leftWidth := width
+	if rightWidth > 0 {
+		leftWidth = max(1, width-rightWidth-1)
+	}
+	model.Width = leftWidth
+	left := model.ShortHelpView(bindings)
+	if rightWidth == 0 {
+		return left
+	}
+	gap := max(1, width-lipgloss.Width(left)-rightWidth)
+	return left + strings.Repeat(" ", gap) + right
 }
 
 func (m browserModel[T]) shortHelp(k browserKeyMap) []key.Binding {
