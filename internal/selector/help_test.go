@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -17,12 +18,24 @@ func TestHelpRowHighlightsKeysAndShowsVersion(t *testing.T) {
 	if !strings.HasSuffix(last, "v2026.9.4") {
 		t.Fatalf("version not right-aligned: %q", last)
 	}
+	if !strings.Contains(m.View(), versionStyle.Render("v2026.9.4")) {
+		t.Fatalf("version not accent underlined: %q", m.View())
+	}
 	styled := m.help.ShortHelpView(m.shortHelp(browserKeys()))
 	if !strings.Contains(styled, headerStyle.Render("q")) {
 		t.Fatalf("key not accent styled: %q", styled)
 	}
 	if !strings.Contains(styled, hintStyle.Render("quit")) {
 		t.Fatalf("description not faint: %q", styled)
+	}
+}
+
+func TestHelpLinePreservesFullVersionWhenNarrow(t *testing.T) {
+	line := renderHelpLine(newHelpModel(), 4, []key.Binding{
+		hintBinding("q", "quit"),
+	}, "v2026.9.4")
+	if got := ansi.Strip(line); got != "v2026.9.4" {
+		t.Fatalf("narrow help line = %q", got)
 	}
 }
 

@@ -73,8 +73,11 @@ func hintBinding(keys, description string) key.Binding {
 }
 
 func renderHelpLine(model help.Model, width int, bindings []key.Binding, right string) string {
-	right = hintStyle.Render(right)
+	right = versionStyle.Render(right)
 	rightWidth := lipgloss.Width(right)
+	if rightWidth >= width {
+		return right
+	}
 	leftWidth := width
 	if rightWidth > 0 {
 		leftWidth = max(1, width-rightWidth-1)

@@ -223,7 +223,7 @@ type browserModel[T item] struct {
 }
 
 var (
-	activeBorder     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#7D7AFF"})
+	activeBorder     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accentColor)
 	inactiveBorder   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#A0A0A0", Dark: "#555555"})
 	toastBorder      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.AdaptiveColor{Light: "#B42318", Dark: "#FF6B6B"}).Padding(0, 1)
 	unavailableStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#8A8A8A", Dark: "#666666"})
