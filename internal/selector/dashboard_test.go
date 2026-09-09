@@ -48,9 +48,20 @@ func TestDashboardOpensHistory(t *testing.T) {
 
 func TestDashboardShowsPromptAndHints(t *testing.T) {
 	view := ansi.Strip((dashboardModel{width: 80, height: 20, groups: []string{"movie", "series"}}).View())
-	for _, expected := range []string{"What would you like to watch?", "● Movies", "○ Series", "Tab movie/series", "Enter search", "Ctrl-H history", "Esc quit"} {
+	for _, expected := range []string{"What would you like to watch?", "● Movies", "○ Series", "tab movie/series", "enter search", "ctrl-h history", "esc quit"} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("missing %q in %q", expected, view)
 		}
+	}
+}
+
+func TestDashboardUsesStyledHelpAndVersion(t *testing.T) {
+	m := dashboardModel{width: 80, height: 20, groups: []string{"movie", "series"}, version: "v2026.9.4"}
+	view := m.View()
+	if !strings.Contains(view, headerStyle.Render("tab")) {
+		t.Fatalf("dashboard key not accent styled: %q", view)
+	}
+	if !strings.Contains(view, versionStyle.Render("v2026.9.4")) {
+		t.Fatalf("dashboard version not accent underlined: %q", view)
 	}
 }

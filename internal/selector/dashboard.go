@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -26,6 +27,7 @@ type DashboardResult struct {
 type DashboardOptions struct {
 	Groups         []string
 	PreferredGroup string
+	Version        string
 }
 
 type dashboardModel struct {
@@ -35,6 +37,7 @@ type dashboardModel struct {
 	height     int
 	groups     []string
 	groupIndex int
+	version    string
 }
 
 func (m dashboardModel) Init() tea.Cmd { return nil }
@@ -87,6 +90,12 @@ func (m dashboardModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m dashboardModel) View() string {
 	tabs := m.mediaTabs()
+	help := renderHelpLine(newHelpModel(), 58, []key.Binding{
+		hintBinding("tab", "movie/series"),
+		hintBinding("enter", "search"),
+		hintBinding("ctrl-h", "history"),
+		hintBinding("esc", "quit"),
+	}, m.version)
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		headerStyle.Render("Lemmewatch"),
 		"",
@@ -94,7 +103,7 @@ func (m dashboardModel) View() string {
 		activeBorder.Width(54).Padding(0, 1).Render(m.query+"_"),
 		tabs,
 		"",
-		hintStyle.Render("Tab movie/series   Enter search   Ctrl-H history   Esc quit"),
+		help,
 	)
 	width, height := m.width, m.height
 	if width <= 0 {
@@ -118,7 +127,7 @@ func (m dashboardModel) selectedGroup() string {
 }
 
 func Dashboard(ctx context.Context, input io.Reader, output io.Writer, options DashboardOptions) (DashboardResult, error) {
-	initial := dashboardModel{groups: options.Groups, groupIndex: preferredGroupIndex(options.Groups, options.PreferredGroup)}
+	initial := dashboardModel{groups: options.Groups, groupIndex: preferredGroupIndex(options.Groups, options.PreferredGroup), version: options.Version}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

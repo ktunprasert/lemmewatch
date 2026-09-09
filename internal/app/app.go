@@ -50,7 +50,7 @@ type navigationKind int
 
 func (a App) Dashboard(ctx context.Context, input io.Reader, output io.Writer) error {
 	preferences := config.Load()
-	result, err := selector.Dashboard(ctx, input, output, selector.DashboardOptions{Groups: []string{string(model.Movie), string(model.Series)}, PreferredGroup: preferences.MediaTab})
+	result, err := selector.Dashboard(ctx, input, output, selector.DashboardOptions{Groups: []string{string(model.Movie), string(model.Series)}, PreferredGroup: preferences.MediaTab, Version: a.Version})
 	if err != nil {
 		return err
 	}
