@@ -3,7 +3,6 @@ package selector
 import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type browserKeyMap struct {
@@ -58,10 +57,10 @@ func newHelpModel() help.Model {
 	h := help.New()
 	h.ShortSeparator = "  "
 	h.Styles = help.Styles{
-		ShortKey:       lipgloss.NewStyle(),
-		ShortDesc:      lipgloss.NewStyle(),
-		ShortSeparator: lipgloss.NewStyle(),
-		Ellipsis:       lipgloss.NewStyle(),
+		ShortKey:       headerStyle,
+		ShortDesc:      hintStyle,
+		ShortSeparator: hintStyle,
+		Ellipsis:       hintStyle,
 	}
 	return h
 }

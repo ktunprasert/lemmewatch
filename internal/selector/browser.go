@@ -18,6 +18,7 @@ type BrowserOptions[T item] struct {
 	InitialTitle        string
 	InitialQuery        string
 	InitialSearch       bool
+	Version             string
 	ParentGroups        []string
 	PreferredGroup      string
 	PreferredQuality    int

@@ -20,6 +20,7 @@ import (
 
 type App struct {
 	Catalog          catalog.Client
+	Version          string
 	Providers        map[string]provider.Provider
 	ProvidersMu      *sync.RWMutex
 	ProviderNames    []string
@@ -413,6 +414,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		InitialTitle:      initialTitle,
 		InitialQuery:      initialQuery,
 		InitialSearch:     initialSearch,
+		Version:           a.Version,
 		ParentGroups:      parentGroups,
 		SearchGroups:      []string{string(model.Movie), string(model.Series)},
 		PreferredGroup:    preferences.MediaTab,

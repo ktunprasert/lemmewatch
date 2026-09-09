@@ -51,9 +51,11 @@ func (m browserModel[T]) View() string {
 		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode, m.options.Watched)
 	}
 	breadcrumb := m.breadcrumb()
-	m.help.Width = width
-	helpText := hintStyle.Render(m.help.ShortHelpView(m.shortHelp(browserKeys())))
-	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + hintStyle.Render(helpText) + "\n"
+	version := hintStyle.Render(m.options.Version)
+	m.help.Width = max(1, width-lipgloss.Width(version)-1)
+	helpText := m.help.ShortHelpView(m.shortHelp(browserKeys()))
+	gap := max(0, width-lipgloss.Width(helpText)-lipgloss.Width(version))
+	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + helpText + strings.Repeat(" ", gap) + version + "\n"
 	var modal string
 	switch m.overlay {
 	case overlayHelp:

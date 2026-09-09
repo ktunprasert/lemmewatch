@@ -111,6 +111,7 @@ func configuredApp(verbose *bool) app.App {
 	}
 	return app.App{
 		Catalog:          catalog.Client{BaseURL: env("LEMMEWATCH_CATALOG_URL", "https://v3-cinemeta.strem.io"), HTTP: httpClient},
+		Version:          buildinfo.Commit,
 		Providers:        providers,
 		ProvidersMu:      &sync.RWMutex{},
 		ProviderNames:    providerNames,
