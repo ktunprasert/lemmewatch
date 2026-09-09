@@ -72,8 +72,17 @@ func hintBinding(keys, description string) key.Binding {
 	return key.NewBinding(key.WithKeys(keys), key.WithHelp(keys, description))
 }
 
-func renderHelpLine(model help.Model, width int, bindings []key.Binding, right string) string {
-	right = versionStyle.Render(right)
+type helpLineOptions struct {
+	Right       string
+	RightColumn bool
+}
+
+func renderHelpLine(model help.Model, width int, bindings []key.Binding, options helpLineOptions) string {
+	if !options.RightColumn {
+		model.Width = width
+		return model.ShortHelpView(bindings)
+	}
+	right := versionStyle.Render(options.Right)
 	rightWidth := lipgloss.Width(right)
 	if rightWidth >= width {
 		return right

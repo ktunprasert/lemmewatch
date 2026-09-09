@@ -52,7 +52,7 @@ func (m browserModel[T]) View() string {
 		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode, m.options.Watched)
 	}
 	breadcrumb := m.breadcrumb()
-	helpText := renderHelpLine(m.help, width, m.shortHelp(browserKeys()), m.options.Version)
+	helpText := renderHelpLine(m.help, width, m.shortHelp(browserKeys()), helpLineOptions{Right: m.options.Version, RightColumn: true})
 	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + helpText + "\n"
 	var modal string
 	switch m.overlay {
@@ -202,7 +202,7 @@ func sortModal(torrents, history bool) string {
 	}
 	lines = append(lines, "", renderHelpLine(newHelpModel(), 32, []key.Binding{
 		hintBinding("esc", "cancel"),
-	}, ""))
+	}, helpLineOptions{}))
 	return activeBorder.Padding(0, 2).Render(strings.Join(lines, "\n"))
 }
 

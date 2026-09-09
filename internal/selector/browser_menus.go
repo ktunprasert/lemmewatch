@@ -89,7 +89,7 @@ func modeModal(modes []ContextMode) string {
 	}
 	lines = append(lines, "", renderHelpLine(newHelpModel(), 32, []key.Binding{
 		hintBinding("esc", "cancel"),
-	}, ""))
+	}, helpLineOptions{}))
 	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
@@ -595,7 +595,7 @@ func inputModal(title, value string, bindings []key.Binding) string {
 		headerStyle.Render(title),
 		input,
 		"",
-		renderHelpLine(newHelpModel(), 50, bindings, ""),
+		renderHelpLine(newHelpModel(), 50, bindings, helpLineOptions{}),
 	}, "\n"))
 }
 
@@ -634,7 +634,7 @@ func (m browserModel[T]) helpModal() string {
 		hintBinding("↑/↓", "select"),
 		hintBinding("enter", "run"),
 		hintBinding("esc", "close"),
-	}, ""))
+	}, helpLineOptions{}))
 	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
@@ -689,6 +689,6 @@ func (m browserModel[T]) settingsModal() string {
 		hintBinding("←/→", "change"),
 		hintBinding("enter", "edit"),
 		hintBinding("esc", "close"),
-	}, ""))
+	}, helpLineOptions{}))
 	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
 }

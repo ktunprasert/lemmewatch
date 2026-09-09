@@ -33,9 +33,18 @@ func TestHelpRowHighlightsKeysAndShowsVersion(t *testing.T) {
 func TestHelpLinePreservesFullVersionWhenNarrow(t *testing.T) {
 	line := renderHelpLine(newHelpModel(), 4, []key.Binding{
 		hintBinding("q", "quit"),
-	}, "v2026.9.4")
+	}, helpLineOptions{Right: "v2026.9.4", RightColumn: true})
 	if got := ansi.Strip(line); got != "v2026.9.4" {
 		t.Fatalf("narrow help line = %q", got)
+	}
+}
+
+func TestHelpLineCanDisableRightColumn(t *testing.T) {
+	line := renderHelpLine(newHelpModel(), 40, []key.Binding{
+		hintBinding("q", "quit"),
+	}, helpLineOptions{Right: "v2026.9.4"})
+	if strings.Contains(ansi.Strip(line), "v2026.9.4") {
+		t.Fatalf("disabled right column rendered: %q", line)
 	}
 }
 

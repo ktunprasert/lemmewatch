@@ -90,14 +90,18 @@ func (m dashboardModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m dashboardModel) View() string {
 	tabs := m.mediaTabs()
+	title := headerStyle.Render("Lemmewatch")
+	if m.version != "" {
+		title += " " + versionStyle.Render("("+m.version+")")
+	}
 	help := renderHelpLine(newHelpModel(), 58, []key.Binding{
 		hintBinding("tab", "movie/series"),
 		hintBinding("enter", "search"),
 		hintBinding("ctrl-h", "history"),
 		hintBinding("esc", "quit"),
-	}, m.version)
+	}, helpLineOptions{})
 	content := lipgloss.JoinVertical(lipgloss.Left,
-		headerStyle.Render("Lemmewatch"),
+		title,
 		"",
 		"What would you like to watch?",
 		activeBorder.Width(54).Padding(0, 1).Render(m.query+"_"),

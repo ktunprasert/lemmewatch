@@ -58,10 +58,14 @@ func TestDashboardShowsPromptAndHints(t *testing.T) {
 func TestDashboardUsesStyledHelpAndVersion(t *testing.T) {
 	m := dashboardModel{width: 80, height: 20, groups: []string{"movie", "series"}, version: "v2026.9.4"}
 	view := m.View()
+	plain := ansi.Strip(view)
+	if !strings.Contains(plain, "Lemmewatch (v2026.9.4)") || strings.Count(plain, "v2026.9.4") != 1 {
+		t.Fatalf("dashboard version placement incorrect: %q", plain)
+	}
 	if !strings.Contains(view, headerStyle.Render("tab")) {
 		t.Fatalf("dashboard key not accent styled: %q", view)
 	}
-	if !strings.Contains(view, versionStyle.Render("v2026.9.4")) {
+	if !strings.Contains(view, versionStyle.Render("(v2026.9.4)")) {
 		t.Fatalf("dashboard version not accent underlined: %q", view)
 	}
 }
