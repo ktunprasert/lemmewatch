@@ -3,7 +3,6 @@ package selector
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"sort"
 	"strings"
@@ -109,9 +108,6 @@ type loaded[T item] struct {
 	loadID   uint64
 }
 
-type playFinished struct{ err error }
-
-type playProgress struct{ text string }
 type requeryFinished[T item] struct {
 	items []T
 	err   error
@@ -183,11 +179,6 @@ func isWatched(value any, state map[string]bool) bool {
 	return true
 }
 
-type toastExpired struct{ id uint64 }
-type spinnerTick struct{}
-
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 type browserModel[T item] struct {
 	ctx                 context.Context
 	levels              []pane[T]
@@ -200,44 +191,34 @@ type browserModel[T item] struct {
 	loading             bool
 	searching           bool
 	historyBusy         bool
-	spinnerFrame        int
 	err                 error
-	filtering           bool
-	querying            bool
 	query               string
 	activeQuery         string
-	sortMenu            bool
-	modeMenu            bool
 	mode                map[string]string
 	sortMode            sortMode
 	streamSort          sortMode
-	helpMenu            bool
 	helpFilter          string
 	helpIndex           int
-	settingsMenu        bool
 	settingsIndex       int
 	player              string
 	provider            string
-	customPlayer        bool
 	customPlayerValue   string
-	providerAPIKey      bool
 	providerAPIKeyFor   string
 	providerAPIKeyValue string
 	pendingG            bool
 	cachedOnly          bool
 	quality             int
-	notice              string
-	toastID             uint64
+	overlay             overlayKind
+	overlayStack        []overlayKind
 	width               int
 	height              int
 	chosen              bool
 	choice              T
-	playing             bool
-	stopPlaying         context.CancelFunc
-	progressCh          <-chan string
+	playback            playbackModel
 	loadCache           map[string][]T
 	loadID              uint64
 	help                help.Model
+	toasts              toastModel
 }
 
 var (
@@ -259,17 +240,15 @@ func (m browserModel[T]) Init() tea.Cmd {
 }
 
 func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.Cmd) {
-	previousNotice := m.notice
+	entryGen := m.toasts.gen
 	defer func() {
 		updated, ok := result.(browserModel[T])
 		if !ok {
 			return
 		}
-		if updated.notice != "" && updated.notice != previousNotice {
-			updated.toastID++
-			id := updated.toastID
-			if command == nil && !(updated.playing && updated.progressCh != nil) {
-				command = tea.Tick(4*time.Second, func(time.Time) tea.Msg { return toastExpired{id: id} })
+		if updated.toasts.gen != entryGen {
+			if cmd := updated.toasts.expiryCmd(); cmd != nil && command == nil {
+				command = cmd
 			}
 		}
 		result = updated
@@ -296,30 +275,17 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		if msg.err == nil && len(msg.items) > 0 {
 			m.focusRight = true
 		} else if msg.err != nil {
-			m.notice = "Load failed: " + msg.err.Error()
+			m.toasts.Err(ToastLoad, "Load failed: %s", msg.err.Error())
 		}
 	case playProgress:
-		if m.progressCh == nil {
-			break
-		}
-		m.notice = msg.text
-		return m, listenProgress(m.progressCh)
+		return m.updatePlaybackProgress(msg)
 	case playFinished:
-		m.playing = false
-		m.stopPlaying = nil
-		m.progressCh = nil
-		if msg.err == nil {
-			m.notice = "Playback launched"
-		} else if errors.Is(msg.err, context.Canceled) {
-			m.notice = "Playback stopped"
-		} else {
-			m.notice = "Playback failed: " + msg.err.Error()
-		}
+		return m.updatePlaybackFinished(msg)
 	case requeryFinished[T]:
 		m.loading = false
 		m.searching = false
 		if msg.err != nil {
-			m.notice = "Search failed: " + msg.err.Error()
+			m.toasts.Err(ToastSearch, "Search failed: %s", msg.err.Error())
 			break
 		}
 		title := "Search results"
@@ -329,11 +295,11 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.crumbs = nil
 		m.activeQuery = msg.query
 		m.focusRight = false
-		m.notice = ""
+		m.toasts.Clear()
 	case historyFinished[T]:
 		m.loading = false
 		if msg.err != nil {
-			m.notice = "History failed: " + msg.err.Error()
+			m.toasts.Err(ToastHistory, "History failed: %s", msg.err.Error())
 			break
 		}
 		m.levels = []pane[T]{{title: "History", items: msg.items}}
@@ -342,11 +308,11 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.options.ParentGroups = nil
 		m.activeQuery = "History"
 		m.focusRight = false
-		m.notice = ""
+		m.toasts.Clear()
 	case historyChanged[T]:
 		m.historyBusy = false
 		if msg.err != nil {
-			m.notice = "History update failed: " + msg.err.Error()
+			m.toasts.Err(ToastHistory, "History update failed: %s", msg.err.Error())
 			break
 		}
 		if m.inHistoryRoot() {
@@ -355,9 +321,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		}
 		if msg.watchChanged {
 			m.options.Watched = msg.watched
-			m.notice = "Watched state updated"
+			m.toasts.Set(ToastHistory, "Watched state updated")
 		} else {
-			m.notice = "Removed from history"
+			m.toasts.Set(ToastHistory, "Removed from history")
 		}
 	case episodeSwitched[T]:
 		if msg.provider != m.provider || msg.loadID != m.loadID {
@@ -365,11 +331,11 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		}
 		m.loading = false
 		if msg.err != nil {
-			m.notice = "Load failed: " + msg.err.Error()
+			m.toasts.Err(ToastLoad, "Load failed: %s", msg.err.Error())
 			break
 		}
 		if !msg.found {
-			m.notice = episodeBoundaryNotice(msg.direction)
+			m.toasts.Set(ToastEpisode, "%s", episodeBoundaryNotice(msg.direction))
 			break
 		}
 		seasonLevel := len(m.levels) - 2
@@ -392,14 +358,12 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.loadCache[msg.key] = msg.streams
 		}
 	case spinnerTick:
-		if m.searching || m.historyBusy || (m.playing && m.progressCh != nil) {
-			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+		if m.searching || m.historyBusy || m.toasts.spinning {
+			m.toasts.frame++
 			return m, spinnerCommand()
 		}
 	case toastExpired:
-		if msg.id == m.toastID {
-			m.notice = ""
-		}
+		m.toasts.Expired(msg.id)
 	case tea.KeyMsg:
 		if m.searching || m.historyBusy {
 			if msg.String() == "ctrl+c" {
@@ -407,29 +371,8 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			}
 			return m, nil
 		}
-		if m.helpMenu {
-			return m.updateHelp(msg)
-		}
-		if m.customPlayer {
-			return m.updateCustomPlayer(msg)
-		}
-		if m.providerAPIKey {
-			return m.updateProviderAPIKey(msg)
-		}
-		if m.settingsMenu {
-			return m.updateSettings(msg)
-		}
-		if m.sortMenu {
-			return m.updateSort(msg)
-		}
-		if m.modeMenu {
-			return m.updateMode(msg)
-		}
-		if m.querying {
-			return m.updateQuery(msg)
-		}
-		if m.filtering {
-			return m.updateFilter(msg)
+		if m.overlay != overlayNone {
+			return m.updateOverlay(msg)
 		}
 		if m.pendingG {
 			m.pendingG = false
@@ -440,14 +383,11 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		}
 		switch msg.String() {
 		case "ctrl+c", "q":
-			if m.stopPlaying != nil {
-				m.stopPlaying()
-			}
+			m.playback.stopPlayback()
 			return m, tea.Quit
 		case "x":
-			if m.stopPlaying != nil {
-				m.stopPlaying()
-				m.notice = "Stopping playback..."
+			if m.playback.stopPlayback() {
+				m.toasts.Set(ToastPlayback, "Stopping playback...")
 			}
 		case "g":
 			m.pendingG = true
@@ -473,24 +413,24 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			}
 		case "s":
 			if (!m.focusRight && len(m.levels) == 1) || (m.focusRight && m.rightHasStreams()) {
-				m.sortMenu = true
+				m.openOverlay(overlaySort)
 			}
 		case "m":
 			if len(m.contextModes()) > 0 {
-				m.modeMenu = true
+				m.openOverlay(overlayMode)
 			}
 		case "/":
-			m.filtering = true
+			m.openOverlay(overlayFilter)
 		case "?":
-			m.helpMenu = true
+			m.openOverlay(overlayHelp)
 			m.helpFilter = ""
 			m.helpIndex = 0
 		case ";":
-			m.settingsMenu = true
+			m.openOverlay(overlaySettings)
 			m.settingsIndex = 0
 		case "ctrl+p":
 			if m.options.Requery != nil && !m.loading {
-				m.querying = true
+				m.openOverlay(overlayQuery)
 				m.query = ""
 			}
 		case "ctrl+h":
@@ -524,10 +464,10 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			if !m.focusRight && len(m.levels) == 1 && len(m.options.ParentGroups) > 1 {
 				m.groupIndex = (m.groupIndex + 1) % len(m.options.ParentGroups)
 				m.current().index = 0
-				m.notice = ""
+				m.toasts.Clear()
 				if m.options.SaveGroup != nil {
 					if err := m.options.SaveGroup(m.options.ParentGroups[m.groupIndex]); err != nil {
-						m.notice = "Could not save media tab preference"
+						m.toasts.Err(ToastSettings, "Could not save media tab preference")
 					}
 				}
 			}
@@ -535,16 +475,16 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			if m.focusRight && m.rightHasStreams() && m.rightCacheApplicable() {
 				m.cachedOnly = !m.cachedOnly
 				m.right.index = 0
-				m.notice = ""
+				m.toasts.Clear()
 			}
 		case "v":
 			if m.focusRight && m.rightHasStreams() {
 				m.quality = nextQuality(m.quality)
 				m.right.index = 0
-				m.notice = ""
+				m.toasts.Clear()
 				if m.options.SaveQuality != nil {
 					if err := m.options.SaveQuality(m.quality); err != nil {
-						m.notice = "Could not save quality preference"
+						m.toasts.Err(ToastSettings, "Could not save quality preference")
 					}
 				}
 			}
@@ -605,505 +545,6 @@ func (m browserModel[T]) contextModes() []ContextMode {
 	return contextual.ContextModes()
 }
 
-func (m browserModel[T]) updateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	m.modeMenu = false
-	if msg.String() == "esc" {
-		return m, nil
-	}
-	modes := m.contextModes()
-	for _, mode := range modes {
-		if msg.String() == mode.Key {
-			m.setContextMode(mode.Key)
-			return m, nil
-		}
-	}
-	return m, nil
-}
-
-func modeModal(modes []ContextMode) string {
-	lines := []string{headerStyle.Render("Mode"), ""}
-	for _, mode := range modes {
-		lines = append(lines, fmt.Sprintf("[%s] %s", mode.Key, mode.Name))
-	}
-	lines = append(lines, "", hintStyle.Render("Choose mode  Esc cancel"))
-	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
-}
-
-func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	bindings := m.filteredHelpBindings()
-	switch msg.String() {
-	case "esc":
-		m.helpMenu = false
-		m.helpFilter = ""
-	case "up":
-		m.helpIndex = clamp(m.helpIndex-1, len(bindings))
-	case "down":
-		m.helpIndex = clamp(m.helpIndex+1, len(bindings))
-	case "enter":
-		if len(bindings) == 0 {
-			return m, nil
-		}
-		selected := bindings[clamp(m.helpIndex, len(bindings))]
-		m.helpMenu = false
-		m.helpFilter = ""
-		m.helpIndex = 0
-		if selected.keys == "gg" {
-			m.move(-1 << 30)
-			return m, nil
-		}
-		return m.Update(selected.key)
-	case "backspace", "ctrl+h":
-		if len(m.helpFilter) > 0 {
-			runes := []rune(m.helpFilter)
-			m.helpFilter = string(runes[:len(runes)-1])
-		}
-	case "ctrl+w":
-		m.helpFilter = strings.TrimRight(m.helpFilter, " ")
-		if end := strings.LastIndex(m.helpFilter, " "); end >= 0 {
-			m.helpFilter = strings.TrimRight(m.helpFilter[:end+1], " ")
-		} else {
-			m.helpFilter = ""
-		}
-	case "ctrl+u":
-		m.helpFilter = ""
-	case "ctrl+c":
-		return m, tea.Quit
-	default:
-		if msg.Type == tea.KeySpace {
-			m.helpFilter += " "
-		} else if msg.Type == tea.KeyRunes {
-			m.helpFilter += string(msg.Runes)
-		}
-	}
-	m.helpIndex = clamp(m.helpIndex, len(m.filteredHelpBindings()))
-	return m, nil
-}
-
-var settingModeGroups = []string{"media", "season", "episode", "stream"}
-
-func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", ";":
-		m.settingsMenu = false
-	case "up", "k":
-		m.settingsIndex = clamp(m.settingsIndex-1, 9)
-	case "down", "j":
-		m.settingsIndex = clamp(m.settingsIndex+1, 9)
-	case "left", "h":
-		m.changeSetting(-1)
-	case "right", "l":
-		m.changeSetting(1)
-	case "enter":
-		if m.settingsIndex == 4 {
-			m.customPlayer = true
-			m.customPlayerValue = m.player
-			if m.player == "mpv" || m.player == "vlc" {
-				m.customPlayerValue = ""
-			}
-		} else {
-			m.changeSetting(1)
-		}
-	case "ctrl+c":
-		return m, tea.Quit
-	}
-	return m, nil
-}
-
-func (m *browserModel[T]) changeSetting(delta int) {
-	switch m.settingsIndex {
-	case 0:
-		if len(m.options.ParentGroups) > 1 {
-			m.groupIndex = wrapIndex(m.groupIndex+delta, len(m.options.ParentGroups))
-			if m.options.SaveGroup != nil {
-				m.saveSetting(m.options.SaveGroup(m.options.ParentGroups[m.groupIndex]))
-			}
-		}
-	case 1:
-		qualities := []int{0, 2160, 1080, 720, 480}
-		index := 0
-		for i, quality := range qualities {
-			if quality == m.quality {
-				index = i
-			}
-		}
-		m.quality = qualities[wrapIndex(index+delta, len(qualities))]
-		if m.options.SaveQuality != nil {
-			m.saveSetting(m.options.SaveQuality(m.quality))
-		}
-	case 2:
-		m.cachedOnly = !m.cachedOnly
-		if m.options.SaveCached != nil {
-			m.saveSetting(m.options.SaveCached(m.cachedOnly))
-		}
-	case 3:
-		if len(m.options.Providers) == 0 {
-			return
-		}
-		index := 0
-		for i, provider := range m.options.Providers {
-			if provider == m.provider {
-				index = i
-			}
-		}
-		selected := m.options.Providers[wrapIndex(index+delta, len(m.options.Providers))]
-		if m.options.ProviderNeedsAPIKey != nil && m.options.ProviderNeedsAPIKey(selected) {
-			m.providerAPIKey = true
-			m.providerAPIKeyFor = selected
-			m.providerAPIKeyValue = ""
-			m.notice = ""
-			return
-		}
-		m.selectProvider(selected, true)
-	case 4:
-		players := []string{"", "mpv", "vlc"}
-		index := 0
-		for i, player := range players {
-			if player == m.player {
-				index = i
-			}
-		}
-		if m.player != "" && m.player != "mpv" && m.player != "vlc" {
-			players = append(players, m.player)
-			index = len(players) - 1
-		}
-		m.player = players[wrapIndex(index+delta, len(players))]
-		if m.options.SavePlayer != nil {
-			m.saveSetting(m.options.SavePlayer(m.player))
-		}
-	default:
-		group := settingModeGroups[m.settingsIndex-5]
-		modes := m.options.ModeOptions[group]
-		if len(modes) == 0 {
-			return
-		}
-		index := 0
-		for i, mode := range modes {
-			if mode.Key == m.mode[group] {
-				index = i
-			}
-		}
-		if m.mode == nil {
-			m.mode = make(map[string]string)
-		}
-		m.mode[group] = modes[wrapIndex(index+delta, len(modes))].Key
-		if m.options.SaveMode != nil {
-			m.saveSetting(m.options.SaveMode(group, m.mode[group]))
-		}
-	}
-}
-
-func (m *browserModel[T]) saveSetting(err error) {
-	if err != nil {
-		m.notice = "Could not save preference"
-	}
-}
-
-func (m *browserModel[T]) selectProvider(selected string, save bool) {
-	m.provider = selected
-	m.right = pane[T]{}
-	m.focusRight = false
-	m.loading = false
-	m.loadCache = nil
-	m.loadID++
-	if save && m.options.SaveProvider != nil {
-		m.saveSetting(m.options.SaveProvider(selected))
-	}
-}
-
-func (m browserModel[T]) updateProviderAPIKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.providerAPIKey = false
-		m.providerAPIKeyFor = ""
-		m.providerAPIKeyValue = ""
-	case "enter":
-		key := strings.TrimSpace(m.providerAPIKeyValue)
-		if key == "" {
-			m.notice = "API key is required"
-			return m, nil
-		}
-		if m.options.SaveProviderAPIKey == nil {
-			m.notice = "Could not save API key"
-			return m, nil
-		}
-		if err := m.options.SaveProviderAPIKey(m.providerAPIKeyFor, key); err != nil {
-			m.notice = "Could not save API key"
-			return m, nil
-		}
-		selected := m.providerAPIKeyFor
-		m.providerAPIKey = false
-		m.providerAPIKeyFor = ""
-		m.providerAPIKeyValue = ""
-		m.notice = ""
-		m.selectProvider(selected, false)
-	case "backspace", "ctrl+h":
-		if len(m.providerAPIKeyValue) > 0 {
-			runes := []rune(m.providerAPIKeyValue)
-			m.providerAPIKeyValue = string(runes[:len(runes)-1])
-		}
-	case "ctrl+w":
-		m.providerAPIKeyValue = strings.TrimRight(m.providerAPIKeyValue, " ")
-		if end := strings.LastIndex(m.providerAPIKeyValue, " "); end >= 0 {
-			m.providerAPIKeyValue = strings.TrimRight(m.providerAPIKeyValue[:end+1], " ")
-		} else {
-			m.providerAPIKeyValue = ""
-		}
-	case "ctrl+u":
-		m.providerAPIKeyValue = ""
-	case "ctrl+c":
-		return m, tea.Quit
-	default:
-		if msg.Type == tea.KeySpace {
-			m.providerAPIKeyValue += " "
-		} else if msg.Type == tea.KeyRunes {
-			m.providerAPIKeyValue += string(msg.Runes)
-		}
-	}
-	return m, nil
-}
-
-func (m browserModel[T]) updateCustomPlayer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.customPlayer = false
-	case "enter":
-		m.player = strings.TrimSpace(m.customPlayerValue)
-		m.customPlayer = false
-		if m.options.SavePlayer != nil {
-			m.saveSetting(m.options.SavePlayer(m.player))
-		}
-	case "backspace", "ctrl+h":
-		if len(m.customPlayerValue) > 0 {
-			runes := []rune(m.customPlayerValue)
-			m.customPlayerValue = string(runes[:len(runes)-1])
-		}
-	case "ctrl+u":
-		m.customPlayerValue = ""
-	case "ctrl+c":
-		return m, tea.Quit
-	default:
-		if msg.Type == tea.KeySpace {
-			m.customPlayerValue += " "
-		} else if msg.Type == tea.KeyRunes {
-			m.customPlayerValue += string(msg.Runes)
-		}
-	}
-	return m, nil
-}
-
-func wrapIndex(index, length int) int {
-	if length == 0 {
-		return 0
-	}
-	return (index%length + length) % length
-}
-
-func (m browserModel[T]) filteredHelpBindings() []helpBinding {
-	bindings := []helpBinding{
-		{keys: "Enter / Right / l", label: "Open or confirm", key: tea.KeyMsg{Type: tea.KeyEnter}},
-		{keys: "Left / h / Esc", label: "Go back", key: tea.KeyMsg{Type: tea.KeyEscape}},
-		{keys: "H", label: "Go Home", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}},
-		{keys: "Up / k", label: "Move up", key: tea.KeyMsg{Type: tea.KeyUp}},
-		{keys: "Down / j", label: "Move down", key: tea.KeyMsg{Type: tea.KeyDown}},
-		{keys: "PgUp", label: "Previous page", key: tea.KeyMsg{Type: tea.KeyPgUp}},
-		{keys: "PgDown", label: "Next page", key: tea.KeyMsg{Type: tea.KeyPgDown}},
-		{keys: "Ctrl-D", label: "Move half-page down", key: tea.KeyMsg{Type: tea.KeyCtrlD}},
-		{keys: "Ctrl-U", label: "Move half-page up", key: tea.KeyMsg{Type: tea.KeyCtrlU}},
-		{keys: "gg", label: "Move to first item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g', 'g'}}},
-		{keys: "G", label: "Move to last item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}},
-		{keys: "r", label: "Refresh episode torrents", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}},
-		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
-		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
-		{keys: "m", label: "Choose detail mode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}},
-		{keys: "x", label: "Stop playback", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}},
-		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
-		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
-		{keys: "?", label: "Show keybindings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
-		{keys: ";", label: "Settings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{';'}}},
-		{keys: "q", label: "Quit", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
-	}
-	if len(m.options.ParentGroups) > 1 {
-		bindings = append(bindings, helpBinding{keys: "Tab", label: "Toggle movie or series", key: tea.KeyMsg{Type: tea.KeyTab}})
-	}
-	if m.options.Requery != nil {
-		bindings = append(bindings, helpBinding{keys: "Ctrl-P", label: "Run new search", key: tea.KeyMsg{Type: tea.KeyCtrlP}})
-	}
-	if m.options.History != nil {
-		bindings = append(bindings, helpBinding{keys: "Ctrl-H", label: "Open history", key: tea.KeyMsg{Type: tea.KeyCtrlH}})
-	}
-	if m.options.ToggleWatched != nil {
-		bindings = append(bindings, helpBinding{keys: "w", label: "Toggle selected item watched", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}})
-	}
-	if m.canSwitchEpisode() {
-		bindings = append(bindings,
-			helpBinding{keys: "n", label: "Load next episode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}},
-			helpBinding{keys: "p", label: "Load previous episode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}},
-		)
-	}
-	if m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
-		bindings = append(bindings, helpBinding{keys: "d", label: "Remove selected title from history", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}})
-	}
-	query := strings.ToLower(strings.TrimSpace(m.helpFilter))
-	if query == "" {
-		return bindings
-	}
-	result := make([]helpBinding, 0, len(bindings))
-	for _, binding := range bindings {
-		if strings.Contains(strings.ToLower(binding.keys+" "+binding.label), query) {
-			result = append(result, binding)
-		}
-	}
-	return result
-}
-
-func (m browserModel[T]) updateSort(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	m.sortMenu = false
-	if m.focusRight && m.rightHasStreams() {
-		switch msg.String() {
-		case "d", "r":
-			m.streamSort = sortRelevance
-		case "q":
-			m.streamSort = sortQualityAscending
-			m.setContextMode("q")
-		case "Q":
-			m.streamSort = sortQualityDescending
-			m.setContextMode("q")
-		case "c":
-			m.streamSort = sortCachedFirst
-			m.setContextMode("c")
-		case "C":
-			m.streamSort = sortUncachedFirst
-			m.setContextMode("c")
-		case "n":
-			m.streamSort = sortNameAscending
-		case "N":
-			m.streamSort = sortNameDescending
-		case "ctrl+c":
-			return m, tea.Quit
-		case "esc":
-			return m, nil
-		default:
-			m.notice = "Unknown torrent sort key"
-		}
-		m.right.index = 0
-		return m, nil
-	}
-	switch msg.String() {
-	case "a":
-		m.sortMode = sortNameAscending
-	case "A":
-		m.sortMode = sortNameDescending
-	case "y":
-		m.sortMode = sortYearAscending
-		m.setContextMode("y")
-	case "Y":
-		m.sortMode = sortYearDescending
-		m.setContextMode("y")
-	case "p":
-		m.sortMode = sortPlayedAscending
-		m.setContextMode("p")
-	case "P":
-		m.sortMode = sortPlayedDescending
-		m.setContextMode("p")
-	case "d", "r":
-		m.sortMode = sortRelevance
-	case "q", "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		return m, nil
-	default:
-		m.notice = "Unknown sort key"
-	}
-	m.current().index = 0
-	return m, nil
-}
-
-func (m *browserModel[T]) setContextMode(key string) {
-	modes := m.contextModes()
-	if len(modes) == 0 {
-		return
-	}
-	if m.mode == nil {
-		m.mode = make(map[string]string)
-	}
-	group := modes[0].Group
-	if group == "" {
-		group = modes[0].Name
-	}
-	m.mode[group] = key
-	if m.options.SaveMode != nil {
-		if err := m.options.SaveMode(group, key); err != nil {
-			m.notice = "Could not save detail mode preference"
-		}
-	}
-}
-
-func (m *browserModel[T]) back() {
-	if m.loading {
-		m.loading = false
-		m.loadID++
-	}
-	if m.focusRight {
-		m.focusRight = false
-		return
-	}
-	if len(m.levels) <= 1 {
-		return
-	}
-	popped := m.levels[len(m.levels)-1]
-	m.levels = m.levels[:len(m.levels)-1]
-	m.right = popped
-	m.crumbs = m.crumbs[:max(0, len(m.crumbs)-1)]
-	m.focusRight = true
-	m.err = nil
-	m.notice = ""
-}
-
-func (m browserModel[T]) updateQuery(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.querying = false
-		m.query = ""
-	case "enter":
-		query := strings.TrimSpace(m.query)
-		if query == "" {
-			return m, nil
-		}
-		m.querying = false
-		m.loading = true
-		m.searching = true
-		m.spinnerFrame = 0
-		m.notice = ""
-		return m, tea.Batch(func() tea.Msg {
-			items, err := m.options.Requery(m.ctx, query)
-			return requeryFinished[T]{items: items, err: err, query: query}
-		}, spinnerCommand())
-	case "backspace", "ctrl+h":
-		if len(m.query) > 0 {
-			runes := []rune(m.query)
-			m.query = string(runes[:len(runes)-1])
-		}
-	case "ctrl+w":
-		m.query = strings.TrimRight(m.query, " ")
-		if end := strings.LastIndex(m.query, " "); end >= 0 {
-			m.query = strings.TrimRight(m.query[:end+1], " ")
-		} else {
-			m.query = ""
-		}
-	case "ctrl+u":
-		m.query = ""
-	case "ctrl+c":
-		return m, tea.Quit
-	default:
-		if msg.Type == tea.KeySpace {
-			m.query += " "
-		} else if msg.Type == tea.KeyRunes {
-			m.query += string(msg.Runes)
-		}
-	}
-	return m, nil
-}
-
 func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 	if m.loading {
 		return m, nil
@@ -1117,12 +558,9 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 		if terminal, ok := any(selected).(terminalItem); ok && terminal.Terminal() {
 			if stream, ok := any(selected).(streamItem); ok {
 				info, isStream := stream.StreamInfo()
-				if isStream && !info.Playable {
-					if !info.CacheApplicable {
-						m.notice = "Stream is not playable"
-						return m, nil
-					}
-					m.notice = "Queueing uncached torrent; playback starts after download..."
+				if isStream && !info.Playable && !info.CacheApplicable {
+					m.toasts.Err(ToastStream, "Stream is not playable")
+					return m, nil
 				}
 			}
 			if m.options.Play == nil {
@@ -1130,18 +568,9 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 				m.chosen = true
 				return m, tea.Quit
 			}
-			if m.playing {
-				m.notice = "Stop current playback before starting another"
+			if m.playback.busy() {
+				m.toasts.Set(ToastPlayback, "Stop current playback before starting another")
 				return m, nil
-			}
-			playContext, cancel := context.WithCancel(m.ctx)
-			m.playing = true
-			m.stopPlaying = cancel
-			m.notice = "Starting playback..."
-			var progressCmd tea.Cmd
-			if m.options.Progress != nil {
-				m.progressCh = m.options.Progress()
-				progressCmd = listenProgress(m.progressCh)
 			}
 			if watchable, ok := any(selected).(watchableItem); ok {
 				identity, keys := watchable.WatchIdentity()
@@ -1155,13 +584,7 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			playCmd := func() tea.Msg {
-				return playFinished{err: m.options.Play(playContext, selected)}
-			}
-			if progressCmd == nil {
-				return m, playCmd
-			}
-			return m, tea.Batch(playCmd, progressCmd)
+			return m.startPlayback(selected)
 		}
 		m.levels = append(m.levels, m.right)
 		m.focusRight = false
@@ -1185,7 +608,7 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 	}
 	m.right = pane[T]{title: m.childTitle(selected)}
 	m.err = nil
-	m.notice = ""
+	m.toasts.Clear()
 	if !refresh && key != "" {
 		if cached, ok := m.loadCache[key]; ok {
 			m.right.items = cached
@@ -1220,7 +643,7 @@ func (m browserModel[T]) switchEpisode(direction int) (tea.Model, tea.Cmd) {
 	for index := currentEpisode.index + direction; index >= 0 && index < len(episodes); index += direction {
 		if itemUnavailable(episodes[index]) {
 			if direction > 0 {
-				m.notice = episodeBoundaryNotice(direction)
+				m.toasts.Set(ToastEpisode, "%s", episodeBoundaryNotice(direction))
 				return m, nil
 			}
 			continue
@@ -1242,12 +665,12 @@ func (m browserModel[T]) switchEpisode(direction int) (tea.Model, tea.Cmd) {
 	seasons := m.levels[seasonLevel].items
 	seasonIndex := currentSeason.index + direction
 	if seasonIndex < 0 || seasonIndex >= len(seasons) {
-		m.notice = episodeBoundaryNotice(direction)
+		m.toasts.Set(ToastEpisode, "%s", episodeBoundaryNotice(direction))
 		return m, nil
 	}
 
 	m.loading = true
-	m.notice = ""
+	m.toasts.Clear()
 	m.loadID++
 	loadID := m.loadID
 	provider := m.provider
@@ -1322,46 +745,25 @@ func episodeBoundaryNotice(direction int) string {
 	return "No next aired episode"
 }
 
-func (m browserModel[T]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	filter := &m.current().filter
-	if m.focusRight {
-		filter = &m.right.filter
-	}
-	switch msg.String() {
-	case "enter":
-		m.filtering = false
-	case "esc":
-		*filter = ""
-		m.filtering = false
-	case "backspace", "ctrl+h":
-		if len(*filter) > 0 {
-			runes := []rune(*filter)
-			*filter = string(runes[:len(runes)-1])
-		}
-	case "ctrl+w":
-		*filter = strings.TrimRight(*filter, " ")
-		if end := strings.LastIndex(*filter, " "); end >= 0 {
-			*filter = strings.TrimRight((*filter)[:end+1], " ")
-		} else {
-			*filter = ""
-		}
-	case "ctrl+u":
-		*filter = ""
-	case "ctrl+c":
-		return m, tea.Quit
-	default:
-		if msg.Type == tea.KeySpace {
-			*filter += " "
-		} else if msg.Type == tea.KeyRunes {
-			*filter += string(msg.Runes)
-		}
+func (m *browserModel[T]) back() {
+	if m.loading {
+		m.loading = false
+		m.loadID++
 	}
 	if m.focusRight {
-		m.right.index = clamp(m.right.index, len(m.filteredRight()))
-	} else {
-		m.current().index = clamp(m.current().index, len(m.filteredCurrent()))
+		m.focusRight = false
+		return
 	}
-	return m, nil
+	if len(m.levels) <= 1 {
+		return
+	}
+	popped := m.levels[len(m.levels)-1]
+	m.levels = m.levels[:len(m.levels)-1]
+	m.right = popped
+	m.crumbs = m.crumbs[:max(0, len(m.crumbs)-1)]
+	m.focusRight = true
+	m.err = nil
+	m.toasts.Clear()
 }
 
 func (m *browserModel[T]) move(delta int) {
@@ -1409,20 +811,6 @@ func (m browserModel[T]) selectedWatchable() (T, bool) {
 	selected := items[clamp(m.current().index, len(items))].item
 	_, ok := any(selected).(watchableItem)
 	return selected, ok
-}
-
-func spinnerCommand() tea.Cmd {
-	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return spinnerTick{} })
-}
-
-func listenProgress(ch <-chan string) tea.Cmd {
-	return func() tea.Msg {
-		text, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return playProgress{text: text}
-	}
 }
 
 func (m *browserModel[T]) current() *pane[T] { return &m.levels[len(m.levels)-1] }
@@ -1577,320 +965,6 @@ func filterItems[T item](items []T, query string) []indexed[T] {
 	return result
 }
 
-func (m browserModel[T]) View() string {
-	width, height := m.width, m.height
-	if width <= 0 {
-		width = 100
-	}
-	if height <= 0 {
-		height = 24
-	}
-	rows := max(1, height-6)
-	current := m.levels[len(m.levels)-1]
-	panes := make([]visiblePane[T], 0, len(m.levels)+1)
-	for i, level := range m.levels {
-		title := level.title
-		if i == 0 && len(m.options.ParentGroups) > 0 {
-			title = groupTabs(m.options.ParentGroups, m.groupIndex)
-		}
-		panes = append(panes, visiblePane[T]{title: title, items: m.filteredLevel(i), index: level.index, filter: level.filter, active: !m.focusRight && i == len(m.levels)-1})
-	}
-	rightTitle := m.right.title
-	if m.rightHasStreams() {
-		qualityLabel := "All qualities"
-		if m.quality > 0 {
-			qualityLabel = fmt.Sprintf("%dp", m.quality)
-		}
-		if m.rightCacheApplicable() {
-			cacheLabel := "Cached"
-			if !m.cachedOnly {
-				cacheLabel = "All"
-			}
-			rightTitle = fmt.Sprintf("Streams  [%s]  [%s]", cacheLabel, qualityLabel)
-		} else {
-			rightTitle = fmt.Sprintf("Streams  [%s]", qualityLabel)
-		}
-	}
-	if rightTitle != "" || len(m.right.items) > 0 || m.loading && !m.searching || m.err != nil {
-		panes = append(panes, visiblePane[T]{title: rightTitle, items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading && !m.searching, err: m.err})
-	}
-	visible, widths := paneLayout(width, panes)
-	rendered := make([]string, len(visible))
-	for i, pane := range visible {
-		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode, m.options.Watched)
-	}
-	breadcrumb := m.breadcrumb()
-	m.help.Width = width
-	helpText := hintStyle.Render(m.help.ShortHelpView(m.shortHelp(browserKeys())))
-	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + hintStyle.Render(helpText) + "\n"
-	var modal string
-	switch {
-	case m.helpMenu:
-		modal = m.helpModal()
-	case m.customPlayer:
-		modal = inputModal("Custom player", m.customPlayerValue, "Enter save  Esc cancel")
-	case m.providerAPIKey:
-		modal = inputModal("TorBox API key", strings.Repeat("*", len([]rune(m.providerAPIKeyValue))), "Enter save  Esc cancel")
-	case m.settingsMenu:
-		modal = m.settingsModal()
-	case m.sortMenu:
-		modal = sortModal(m.focusRight && m.rightHasStreams(), m.inHistoryRoot())
-	case m.modeMenu:
-		modal = modeModal(m.contextModes())
-	case m.querying:
-		modal = inputModal("Search", m.query, "Enter search  Esc cancel")
-	case m.filtering:
-		filter := current.filter
-		if m.focusRight {
-			filter = m.right.filter
-		}
-		modal = inputModal("Filter active pane", filter, "Enter apply  Esc clear")
-	}
-	view := base
-	if modal != "" {
-		view = overlay(view, modal, width)
-	}
-	if m.searching {
-		view = overlay(view, activityModal(m.spinnerFrame, "Searching"), width)
-	} else if m.historyBusy {
-		view = overlay(view, activityModal(m.spinnerFrame, "Updating watched state"), width)
-	}
-	if m.notice != "" {
-		text := m.notice
-		if m.playing && m.progressCh != nil {
-			text = spinnerFrames[m.spinnerFrame%len(spinnerFrames)] + " " + text
-		}
-		view = toastOverlay(view, text, width)
-	}
-	return "\x1b]0;" + plainLabel(breadcrumb) + "\x07" + view
-}
-
-func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []int) {
-	if len(panes) == 0 {
-		return nil, nil
-	}
-	count := min(3, len(panes))
-	if width < 64 {
-		count = 1
-	} else if width < 88 {
-		count = min(2, count)
-	}
-	if count == 1 {
-		active := len(panes) - 1
-		for i := range panes {
-			if panes[i].active {
-				active = i
-				break
-			}
-		}
-		return panes[active : active+1], []int{max(18, width-2)}
-	}
-	visible := panes[len(panes)-count:]
-	minimums := []int{24, 40}
-	weights := []int{1, 2}
-	if count == 3 {
-		minimums = []int{24, 24, 40}
-		weights = []int{1, 1, 2}
-	}
-	extra := max(0, width-sum(minimums))
-	weightTotal := sum(weights)
-	widths := make([]int, count)
-	used := 0
-	for i := range count {
-		share := extra * weights[i] / weightTotal
-		widths[i] = minimums[i] + share - 2
-		used += share
-	}
-	widths[count-1] += extra - used
-	return visible, widths
-}
-
-func sum(values []int) int {
-	total := 0
-	for _, value := range values {
-		total += value
-	}
-	return total
-}
-
-func (m browserModel[T]) breadcrumb() string {
-	parts := make([]string, 0, len(m.crumbs)+2)
-	if len(m.options.ParentGroups) > 0 && m.groupIndex >= 0 && m.groupIndex < len(m.options.ParentGroups) {
-		group := m.options.ParentGroups[m.groupIndex]
-		if group != "" {
-			parts = append(parts, strings.ToUpper(group[:1])+group[1:])
-		}
-	}
-	if m.activeQuery != "" {
-		parts = append(parts, m.activeQuery)
-	} else if len(parts) == 0 {
-		parts = append(parts, "Search")
-	}
-	parts = append(parts, m.crumbs...)
-	return strings.Join(parts, " / ")
-}
-
-func sortModal(torrents, history bool) string {
-	lines := []string{
-		headerStyle.Render("Sort results"),
-		"a   Name ascending",
-		"A   Name descending",
-		"y   Year ascending",
-		"Y   Year descending",
-		"d/r Default relevance",
-	}
-	if history {
-		lines = append(lines[:len(lines)-1], "p   Date played ascending", "P   Date played descending", lines[len(lines)-1])
-	}
-	if torrents {
-		lines = []string{
-			headerStyle.Render("Sort streams"),
-			"q   Quality ascending",
-			"Q   Quality descending",
-			"c   Cached first",
-			"C   Uncached first",
-			"n   Name ascending",
-			"N   Name descending",
-			"d/r Default ranking",
-		}
-	}
-	lines = append(lines, "", hintStyle.Render("Esc cancel"))
-	return activeBorder.Padding(0, 2).Render(strings.Join(lines, "\n"))
-}
-
-func inputModal(title, value, help string) string {
-	input := ansi.Truncate(value, 48, "...") + "_"
-	return activeBorder.Width(50).Padding(0, 1).Render(strings.Join([]string{
-		headerStyle.Render(title),
-		input,
-		"",
-		hintStyle.Render(help + "  Ctrl-W word  Ctrl-U line"),
-	}, "\n"))
-}
-
-func activityModal(frame int, label string) string {
-	return activeBorder.Padding(0, 2).Render(spinnerFrames[frame%len(spinnerFrames)] + " " + label)
-}
-
-func (m browserModel[T]) helpModal() string {
-	bindings := m.filteredHelpBindings()
-	lines := []string{headerStyle.Render("Keybindings"), "Search: " + m.helpFilter + "_", ""}
-	if len(bindings) == 0 {
-		lines = append(lines, "No matching commands")
-	} else {
-		selected := clamp(m.helpIndex, len(bindings))
-		height := m.height
-		if height <= 0 {
-			height = 24
-		}
-		visible := max(1, height-7)
-		start := max(0, min(selected-visible/2, len(bindings)-visible))
-		end := min(len(bindings), start+visible)
-		lines[0] += hintStyle.Render(fmt.Sprintf("  %d-%d/%d", start+1, end, len(bindings)))
-		for i := start; i < end; i++ {
-			binding := bindings[i]
-			line := fmt.Sprintf("%-20s %s", binding.keys, binding.label)
-			if i == selected {
-				line = selectedStyle.Width(50).Render("> " + line)
-			} else {
-				line = "  " + line
-			}
-			lines = append(lines, line)
-		}
-	}
-	lines = append(lines, "", hintStyle.Render("Type to filter  Up/Down select  Enter run  Esc close"))
-	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
-}
-
-func (m browserModel[T]) settingsModal() string {
-	group := "Movie"
-	if len(m.options.ParentGroups) > 0 {
-		group = strings.ToUpper(m.options.ParentGroups[m.groupIndex][:1]) + m.options.ParentGroups[m.groupIndex][1:]
-	}
-	quality := "All"
-	if m.quality != 0 {
-		quality = fmt.Sprintf("%dp", m.quality)
-	}
-	cached := "Cached only"
-	if !m.cachedOnly {
-		cached = "All streams"
-	}
-	player := m.player
-	if player == "" {
-		player = "System default"
-	}
-	provider := m.provider
-	if provider == "" {
-		provider = "Default"
-	}
-	values := []string{group, quality, cached, provider, player}
-	labels := []string{"Media type", "Quality", "Availability", "Provider", "Player"}
-	for _, modeGroup := range settingModeGroups {
-		modes := m.options.ModeOptions[modeGroup]
-		value := "Default"
-		key := m.mode[modeGroup]
-		for i, mode := range modes {
-			if key == mode.Key || key == "" && i == 0 {
-				value = mode.Name
-				break
-			}
-		}
-		labels = append(labels, strings.ToUpper(modeGroup[:1])+modeGroup[1:]+" detail")
-		values = append(values, value)
-	}
-	lines := []string{headerStyle.Render("Settings"), ""}
-	for i := range labels {
-		line := fmt.Sprintf("%-20s  < %-16s >", labels[i], values[i])
-		if i == m.settingsIndex {
-			line = selectedStyle.Render("> " + line)
-		} else {
-			line = "  " + line
-		}
-		lines = append(lines, line)
-	}
-	lines = append(lines, "", hintStyle.Render("Up/Down item  Left/Right change  Enter edit player  Esc close"))
-	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
-}
-
-func overlay(base, modal string, width int) string {
-	baseLines := strings.Split(strings.TrimSuffix(base, "\n"), "\n")
-	modalLines := strings.Split(modal, "\n")
-	modalWidth := lipgloss.Width(modal)
-	x := max(0, (width-modalWidth)/2)
-	y := max(0, (len(baseLines)-len(modalLines))/2)
-	return overlayAt(baseLines, modalLines, width, x, y)
-}
-
-func toastOverlay(base, message string, width int) string {
-	contentWidth := max(10, min(48, width-6))
-	toast := toastBorder.Render(ansi.Truncate(plainLabel(message), contentWidth, "..."))
-	baseLines := strings.Split(strings.TrimSuffix(base, "\n"), "\n")
-	toastLines := strings.Split(toast, "\n")
-	x := max(0, width-lipgloss.Width(toast)-1)
-	y := max(0, len(baseLines)-len(toastLines)-1)
-	return overlayAt(baseLines, toastLines, width, x, y)
-}
-
-func overlayAt(baseLines, modalLines []string, width, x, y int) string {
-	modalWidth := 0
-	for _, line := range modalLines {
-		modalWidth = max(modalWidth, lipgloss.Width(line))
-	}
-	for len(baseLines) < y+len(modalLines) {
-		baseLines = append(baseLines, "")
-	}
-	for i, modalLine := range modalLines {
-		baseLine := baseLines[y+i]
-		left := ansi.Cut(baseLine, 0, x)
-		if padding := x - lipgloss.Width(left); padding > 0 {
-			left += strings.Repeat(" ", padding)
-		}
-		right := ansi.Cut(baseLine, x+modalWidth, width)
-		baseLines[y+i] = left + modalLine + right
-	}
-	return strings.Join(baseLines, "\n") + "\n"
-}
-
 func (m browserModel[T]) rightHasStreams() bool {
 	for _, value := range m.right.items {
 		if stream, ok := any(value).(streamItem); ok {
@@ -1922,92 +996,6 @@ func (m browserModel[T]) childTitle(value T) string {
 	return "Items"
 }
 
-func renderBrowserPane[T item](title string, items []indexed[T], selected, width, rows int, active bool, filter string, loading bool, loadErr error, selectedModes map[string]string, watched map[string]bool) string {
-	contentWidth := max(1, width-2)
-	lines := []string{headerStyle.Render(ansi.Truncate(title, contentWidth, "..."))}
-	if loading {
-		lines = append(lines, "Loading...")
-	} else if loadErr != nil {
-		lines = append(lines, ansi.Truncate("Error: "+loadErr.Error(), contentWidth, "..."), "Press Enter to retry")
-	} else if len(items) == 0 {
-		message := "No items"
-		if filter != "" {
-			message = "No filter matches"
-		}
-		lines = append(lines, message)
-	} else {
-		selected = clamp(selected, len(items))
-		start := max(0, min(selected-rows/2, len(items)-rows))
-		end := min(len(items), start+rows)
-		for i := start; i < end; i++ {
-			label := plainLabel(items[i].item.Label())
-			indicator := "  "
-			if isWatched(items[i].item, watched) {
-				indicator = "✓ "
-			}
-			label = indicator + label
-			context := ""
-			if contextual, ok := any(items[i].item).(contextualItem); ok {
-				modes := contextual.ContextModes()
-				if len(modes) > 0 {
-					group := modes[0].Group
-					if group == "" {
-						group = modes[0].Name
-					}
-					key := selectedModes[group]
-					if key == "" {
-						key = modes[0].Key
-					}
-					matched := false
-					for _, mode := range modes {
-						if mode.Key == key {
-							context = plainLabel(mode.Value)
-							matched = true
-							break
-						}
-					}
-					if !matched {
-						context = plainLabel(modes[0].Value)
-					}
-				}
-			}
-			available := max(1, contentWidth-2)
-			unavailable, isUnavailable := any(items[i].item).(unavailableItem)
-			if context != "" {
-				context = ansi.Truncate(context, max(1, available/2), "...")
-				label = ansi.Truncate(label, max(1, available-lipgloss.Width(context)-1), "...")
-				if isUnavailable && unavailable.Unavailable() {
-					label = unavailableStyle.Render(label)
-				}
-				label += strings.Repeat(" ", max(1, available-lipgloss.Width(label)-lipgloss.Width(context))) + hintStyle.Render(context)
-			} else {
-				label = ansi.Truncate(label, available, "...")
-				if isUnavailable && unavailable.Unavailable() {
-					label = unavailableStyle.Render(label)
-				}
-			}
-			row := "  " + label
-			if i == selected {
-				style := selectedStyle
-				if !active {
-					style = inactiveSelected
-				}
-				row = style.Width(contentWidth).Render("> " + label)
-			}
-			lines = append(lines, row)
-		}
-		lines[0] += hintStyle.Render(fmt.Sprintf("  %d-%d/%d", start+1, end, len(items)))
-	}
-	for len(lines) < rows+1 {
-		lines = append(lines, "")
-	}
-	style := inactiveBorder
-	if active {
-		style = activeBorder
-	}
-	return style.Width(width).Height(rows + 1).Render(strings.Join(lines, "\n"))
-}
-
 func plainLabel(value string) string {
 	value = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(value)
 	return strings.Join(strings.Fields(ansi.Strip(value)), " ")
@@ -2018,23 +1006,6 @@ func clamp(value, length int) int {
 		return 0
 	}
 	return min(max(0, value), length-1)
-}
-
-func groupTabs(groups []string, active int) string {
-	labels := make([]string, len(groups))
-	for i, group := range groups {
-		label := strings.ToUpper(group[:1]) + group[1:]
-		if label == "Movie" {
-			label = "Movies"
-		}
-		if i == active {
-			label = headerStyle.Render("● " + label)
-		} else {
-			label = hintStyle.Render("○ " + label)
-		}
-		labels[i] = label
-	}
-	return strings.Join(labels, "    ")
 }
 
 func nextQuality(current int) int {

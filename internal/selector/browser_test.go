@@ -87,13 +87,13 @@ func TestModePopupSelectsContextualRightColumn(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune", modes: []ContextMode{{Key: "y", Name: "Year", Value: "2021"}, {Key: "i", Name: "ID", Value: "tt1160419"}}})
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 	m = next.(browserModel[testChoice])
-	if !m.modeMenu || !strings.Contains(ansi.Strip(m.View()), "[i] ID") {
+	if m.overlay != overlayMode || !strings.Contains(ansi.Strip(m.View()), "[i] ID") {
 		t.Fatalf("mode popup missing: %q", ansi.Strip(m.View()))
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
 	m = next.(browserModel[testChoice])
 	view := ansi.Strip(m.View())
-	if m.modeMenu || !strings.Contains(view, "Dune") || !strings.Contains(view, "tt1160419") {
+	if m.overlay == overlayMode || !strings.Contains(view, "Dune") || !strings.Contains(view, "tt1160419") {
 		t.Fatalf("ID mode not rendered: %q", view)
 	}
 }
@@ -102,7 +102,7 @@ func TestModeSelectionPersistsPreference(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune", modes: []ContextMode{{Group: "media", Key: "y", Name: "Year", Value: "2021"}, {Group: "media", Key: "i", Name: "ID", Value: "tt1160419"}}})
 	var group, key string
 	m.options.SaveMode = func(savedGroup, savedKey string) error { group, key = savedGroup, savedKey; return nil }
-	m.modeMenu = true
+	m.overlay = overlayMode
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
 	m = next.(browserModel[testChoice])
 	if group != "media" || key != "i" || m.mode["media"] != "i" {
@@ -308,7 +308,7 @@ func TestNextAndPreviousEpisodesCrossSeasonBoundaries(t *testing.T) {
 
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	m = next.(browserModel[testChoice])
-	if m.notice != "No next aired episode" || m.current().index != 0 {
+	if m.toastText() != "No next aired episode" || m.current().index != 0 {
 		t.Fatalf("future episode boundary = %#v", m)
 	}
 
@@ -372,7 +372,7 @@ func TestEpisodeNavigationDoesNotApplyToMovies(t *testing.T) {
 
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	m = next.(browserModel[testChoice])
-	if command != nil || m.loading || m.notice != "" {
+	if command != nil || m.loading || m.toastText() != "" {
 		t.Fatalf("movie navigation changed state = %#v", m)
 	}
 	if strings.Contains(ansi.Strip(m.View()), "n/p episode") {
@@ -396,7 +396,7 @@ func TestEpisodeNavigationToastsAtSeriesBounds(t *testing.T) {
 
 		next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{test.key}})
 		m = next.(browserModel[testChoice])
-		if command == nil || m.notice != test.notice || m.right.items[0].label != "torrent" {
+		if command == nil || m.toastText() != test.notice || m.right.items[0].label != "torrent" {
 			t.Fatalf("%q boundary state = %#v", test.key, m)
 		}
 	}
@@ -541,7 +541,7 @@ func TestBrowserPromotesChildrenAndBacktracks(t *testing.T) {
 
 func TestBrowserFiltersActivePane(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"}, testChoice{label: "Arrival"})
-	m.filtering = true
+	m.overlay = overlayFilter
 	for _, key := range []rune("arr") {
 		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
 		m = next.(browserModel[testChoice])
@@ -655,12 +655,12 @@ func TestBrowserShowsAndCancelsSortMenu(t *testing.T) {
 	m.options.ParentGroups = []string{"movie", "series"}
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	m = next.(browserModel[testChoice])
-	if !m.sortMenu || !strings.Contains(ansi.Strip(m.View()), "a   Name ascending") {
+	if m.overlay != overlaySort || !strings.Contains(ansi.Strip(m.View()), "a   Name ascending") {
 		t.Fatalf("sort menu not visible: %q", ansi.Strip(m.View()))
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m = next.(browserModel[testChoice])
-	if m.sortMenu || m.sortMode != sortRelevance {
+	if m.overlay == overlaySort || m.sortMode != sortRelevance {
 		t.Fatalf("sort menu not cancelled: %#v", m)
 	}
 }
@@ -718,30 +718,30 @@ func TestOverlayComposesModalOverBase(t *testing.T) {
 func TestToastRendersAndExpiresByGeneration(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune", group: "movie"})
 	m.options.ParentGroups = []string{"movie", "series"}
-	m.sortMenu = true
+	m.overlay = overlaySort
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
 	m = next.(browserModel[testChoice])
-	if m.notice != "Unknown sort key" || m.toastID == 0 || command == nil {
+	if m.toastText() != "Unknown sort key" || m.toasts.current.id == 0 || command == nil {
 		t.Fatalf("toast not scheduled: %#v", m)
 	}
 	if !strings.Contains(ansi.Strip(m.View()), "Unknown sort key") {
 		t.Fatalf("toast not rendered: %q", ansi.Strip(m.View()))
 	}
-	next, _ = m.Update(toastExpired{id: m.toastID - 1})
+	next, _ = m.Update(toastExpired{id: m.toasts.current.id - 1})
 	m = next.(browserModel[testChoice])
-	if m.notice == "" {
+	if m.toastText() == "" {
 		t.Fatal("stale timer cleared current toast")
 	}
-	next, _ = m.Update(toastExpired{id: m.toastID})
+	next, _ = m.Update(toastExpired{id: m.toasts.current.id})
 	m = next.(browserModel[testChoice])
-	if m.notice != "" {
-		t.Fatalf("toast did not expire: %q", m.notice)
+	if m.toastText() != "" {
+		t.Fatalf("toast did not expire: %q", m.toastText())
 	}
 }
 
 func TestToastOverlaysBottomRight(t *testing.T) {
 	base := "top\nsecond line\nthird line\nfourth line\nbottom\n"
-	view := ansi.Strip(toastOverlay(base, "network error", 50))
+	view := ansi.Strip(overlayToast(base, toastBorder.Render("network error"), 50))
 	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
 	if !strings.Contains(strings.Join(lines[len(lines)-4:], "\n"), "network error") {
 		t.Fatalf("toast not near bottom: %q", view)
@@ -755,7 +755,7 @@ func TestLoadErrorCreatesToast(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
 	next, command := m.Update(loaded[testChoice]{err: errors.New("network error")})
 	m = next.(browserModel[testChoice])
-	if m.notice != "Load failed: network error" || command == nil {
+	if m.toastText() != "Load failed: network error" || command == nil {
 		t.Fatalf("load error toast = %#v", m)
 	}
 }
@@ -818,12 +818,12 @@ func TestProviderSettingPromptsForMaskedAPIKey(t *testing.T) {
 		savedProvider, savedKey = selected, key
 		return nil
 	}
-	m.settingsMenu = true
+	m.overlay = overlaySettings
 	m.settingsIndex = 3
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m = next.(browserModel[testChoice])
-	if !m.providerAPIKey || m.provider != "webstreamr" {
+	if m.overlay != overlayProviderAPIKey || m.provider != "webstreamr" {
 		t.Fatalf("API key prompt state = %#v", m)
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("secret-token")})
@@ -834,7 +834,7 @@ func TestProviderSettingPromptsForMaskedAPIKey(t *testing.T) {
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	if m.providerAPIKey || m.provider != "torbox" || savedProvider != "torbox" || savedKey != "secret-token" {
+	if m.overlay == overlayProviderAPIKey || m.provider != "torbox" || savedProvider != "torbox" || savedKey != "secret-token" {
 		t.Fatalf("saved provider key = %q/%q, state = %#v", savedProvider, savedKey, m)
 	}
 }
@@ -844,7 +844,7 @@ func TestProviderAPIKeyCancelAndSaveFailureKeepProvider(t *testing.T) {
 	m.provider = "webstreamr"
 	m.options.Providers = []string{"webstreamr", "torbox"}
 	m.options.ProviderNeedsAPIKey = func(selected string) bool { return selected == "torbox" }
-	m.settingsMenu = true
+	m.overlay = overlaySettings
 	m.settingsIndex = 3
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
@@ -853,7 +853,7 @@ func TestProviderAPIKeyCancelAndSaveFailureKeepProvider(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m = next.(browserModel[testChoice])
-	if m.providerAPIKey || m.providerAPIKeyValue != "" || m.provider != "webstreamr" {
+	if m.overlay == overlayProviderAPIKey || m.providerAPIKeyValue != "" || m.provider != "webstreamr" {
 		t.Fatalf("cancelled API key state = %#v", m)
 	}
 
@@ -864,7 +864,7 @@ func TestProviderAPIKeyCancelAndSaveFailureKeepProvider(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	if !m.providerAPIKey || m.provider != "webstreamr" || m.notice != "Could not save API key" {
+	if m.overlay != overlayProviderAPIKey || m.provider != "webstreamr" || m.toastText() != "Could not save API key" {
 		t.Fatalf("failed API key save state = %#v", m)
 	}
 }
@@ -939,7 +939,7 @@ func TestBrowserSortsTorrentResults(t *testing.T) {
 
 func TestFilterEditingShortcuts(t *testing.T) {
 	m := newBrowser(testChoice{label: "one two three"})
-	m.filtering = true
+	m.overlay = overlayFilter
 	m.current().filter = "one two three"
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
 	m = next.(browserModel[testChoice])
@@ -955,7 +955,7 @@ func TestFilterEditingShortcuts(t *testing.T) {
 
 func TestFilterAcceptsSpaces(t *testing.T) {
 	m := newBrowser(testChoice{label: "one piece"})
-	m.filtering = true
+	m.overlay = overlayFilter
 	for _, message := range []tea.KeyMsg{
 		{Type: tea.KeyRunes, Runes: []rune("one")},
 		{Type: tea.KeySpace},
@@ -972,14 +972,14 @@ func TestFilterAcceptsSpaces(t *testing.T) {
 func TestFilterAndSearchRenderAsModalLayers(t *testing.T) {
 	m := newBrowser(testChoice{label: "One Piece"})
 	m.activeQuery = "One Piece"
-	m.filtering = true
+	m.overlay = overlayFilter
 	m.current().filter = "piece"
 	filterView := ansi.Strip(m.View())
 	if !strings.Contains(filterView, "Filter active pane") || !strings.Contains(filterView, "One Piece") {
 		t.Fatalf("filter modal = %q", filterView)
 	}
-	m.filtering = false
-	m.querying = true
+	m.overlay = overlayNone
+	m.overlay = overlayQuery
 	m.query = "Family Guy"
 	queryView := ansi.Strip(m.View())
 	if !strings.Contains(queryView, "Search") || !strings.Contains(queryView, "Family Guy_") || !strings.Contains(queryView, "One Piece") {
@@ -1008,7 +1008,7 @@ func TestBrowserPlaybackKeepsSessionOpen(t *testing.T) {
 	m.options.Play = func(context.Context, testChoice) error { played = true; return nil }
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	if !m.playing || m.chosen || command == nil {
+	if !m.playback.busy() || m.chosen || command == nil {
 		t.Fatalf("playback did not remain in session: %#v", m)
 	}
 	if !m.options.Watched["show"] || !m.options.Watched["show:1:1"] || !strings.Contains(ansi.Strip(m.View()), "✓ Episode 1") {
@@ -1016,7 +1016,7 @@ func TestBrowserPlaybackKeepsSessionOpen(t *testing.T) {
 	}
 	next, _ = m.Update(command())
 	m = next.(browserModel[testChoice])
-	if !played || m.playing || m.notice != "Playback launched" {
+	if !played || m.playback.busy() || m.toastText() != "Playback launched" {
 		t.Fatalf("playback completion = %#v, played = %t", m, played)
 	}
 }
@@ -1032,7 +1032,7 @@ func TestBrowserStopsPlayback(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	next, _ = m.Update(command())
 	m = next.(browserModel[testChoice])
-	if m.playing || m.notice != "Playback stopped" {
+	if m.playback.busy() || m.toastText() != "Playback stopped" {
 		t.Fatalf("stopped playback = %#v", m)
 	}
 }
@@ -1121,7 +1121,7 @@ func TestBrowserTogglesAndRemovesHistory(t *testing.T) {
 	}
 	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
-	if m.historyBusy || m.notice != "Watched state updated" || !m.options.Watched["tt1"] {
+	if m.historyBusy || m.toastText() != "Watched state updated" || !m.options.Watched["tt1"] {
 		t.Fatalf("history toggle = %#v", m)
 	}
 	m.levels[0] = pane[testChoice]{title: "History", items: []testChoice{{label: "Arrival"}}}
@@ -1133,7 +1133,7 @@ func TestBrowserTogglesAndRemovesHistory(t *testing.T) {
 	}
 	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
-	if m.historyBusy || len(m.current().items) != 0 || m.notice != "Removed from history" {
+	if m.historyBusy || len(m.current().items) != 0 || m.toastText() != "Removed from history" {
 		t.Fatalf("history removal = %#v", m)
 	}
 }
@@ -1156,7 +1156,7 @@ func TestBrowserTogglesWatchedEpisodeInRightPane(t *testing.T) {
 	}
 	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
-	if !m.options.Watched["show:1:1"] || m.notice != "Watched state updated" {
+	if !m.options.Watched["show:1:1"] || m.toastText() != "Watched state updated" {
 		t.Fatalf("right-pane watched toggle = %#v", m)
 	}
 	if !strings.Contains(ansi.Strip(m.View()), "w watched") {
@@ -1178,7 +1178,7 @@ func TestBrowserRendersStableWatchedIndicators(t *testing.T) {
 
 func TestBrowserQueryAcceptsSpaces(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
-	m.querying = true
+	m.overlay = overlayQuery
 	for _, message := range []tea.KeyMsg{
 		{Type: tea.KeyRunes, Runes: []rune("one")},
 		{Type: tea.KeySpace},
@@ -1211,29 +1211,29 @@ func TestHelpPaletteFiltersAndRunsSelectedAction(t *testing.T) {
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	if m.helpMenu || !m.querying {
+	if m.overlay == overlayHelp || m.overlay != overlayQuery {
 		t.Fatalf("selected action did not open search: %#v", m)
 	}
 }
 
 func TestHelpPaletteCanSelectFilterAction(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
-	m.helpMenu = true
+	m.overlay = overlayHelp
 	m.helpFilter = "active pane"
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	if m.helpMenu || !m.filtering {
+	if m.overlay == overlayHelp || m.overlay != overlayFilter {
 		t.Fatalf("selected action did not open filter: %#v", m)
 	}
 }
 
 func TestHelpPaletteOpensSettings(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
-	m.helpMenu = true
+	m.overlay = overlayHelp
 	m.helpFilter = "settings"
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	if m.helpMenu || !m.settingsMenu || !strings.Contains(ansi.Strip(m.View()), "Settings") {
+	if m.overlay == overlayHelp || m.overlay != overlaySettings || !strings.Contains(ansi.Strip(m.View()), "Settings") {
 		t.Fatalf("settings did not open: %#v", m)
 	}
 }
@@ -1243,8 +1243,8 @@ func TestSemicolonTogglesSettings(t *testing.T) {
 	for _, open := range []bool{true, false} {
 		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{';'}})
 		m = next.(browserModel[testChoice])
-		if m.settingsMenu != open {
-			t.Fatalf("settings open = %t, want %t", m.settingsMenu, open)
+		if (m.overlay == overlaySettings) != open {
+			t.Fatalf("settings open = %t, want %t", m.overlay == overlaySettings, open)
 		}
 	}
 }
@@ -1261,7 +1261,7 @@ func TestSettingsCyclesAndPersistsDefaults(t *testing.T) {
 	m.options.SaveQuality = func(value int) error { quality = value; return nil }
 	m.options.SaveCached = func(value bool) error { cached = value; return nil }
 	m.options.SaveMode = func(savedGroup, value string) error { mode = value; group = savedGroup; return nil }
-	m.settingsMenu = true
+	m.overlay = overlaySettings
 
 	for _, index := range []int{0, 1, 2, 5} {
 		m.settingsIndex = index
@@ -1275,7 +1275,7 @@ func TestSettingsCyclesAndPersistsDefaults(t *testing.T) {
 
 func TestSettingsAcceptsCustomPlayer(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
-	m.settingsMenu = true
+	m.overlay = overlaySettings
 	m.settingsIndex = 4
 	var saved string
 	m.options.SavePlayer = func(value string) error { saved = value; return nil }
@@ -1285,7 +1285,7 @@ func TestSettingsAcceptsCustomPlayer(t *testing.T) {
 		next, _ = m.Update(message)
 		m = next.(browserModel[testChoice])
 	}
-	if m.customPlayer || m.player != "my-player" || saved != "my-player" {
+	if m.overlay == overlayCustomPlayer || m.player != "my-player" || saved != "my-player" {
 		t.Fatalf("custom player = %q, saved = %q", m.player, saved)
 	}
 }
@@ -1326,8 +1326,8 @@ func TestPlaybackProgressUpdatesToast(t *testing.T) {
 	}
 	next, tick := next.Update(progress)
 	m = next.(browserModel[testChoice])
-	if m.notice != "Downloading torrent: 40%" || tick == nil {
-		t.Fatalf("notice = %q, tick = %#v", m.notice, tick)
+	if m.toastText() != "Downloading torrent: 40%" || tick == nil {
+		t.Fatalf("notice = %q, tick = %#v", m.toastText(), tick)
 	}
 	view := ansi.Strip(m.View())
 	if !strings.Contains(view, "Downloading torrent: 40%") {

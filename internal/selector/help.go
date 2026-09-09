@@ -69,7 +69,7 @@ func newHelpModel() help.Model {
 func (m browserModel[T]) shortHelp(k browserKeyMap) []key.Binding {
 	rightStreams := m.focusRight && m.rightHasStreams()
 	bindings := make([]key.Binding, 0, 16)
-	if m.playing {
+	if m.playback.busy() {
 		bindings = append(bindings, k.Stop)
 	}
 	if m.options.ToggleWatched != nil && !rightStreams {
