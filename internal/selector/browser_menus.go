@@ -589,13 +589,13 @@ func (m browserModel[T]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func inputModal(title, value string, bindings []key.Binding) string {
-	input := ansi.Truncate(value, 48, "...") + "_"
-	return activeBorder.Width(50).Padding(0, 1).Render(strings.Join([]string{
+func inputModal(title, value string, width int, bindings []key.Binding) string {
+	input := ansi.Truncate(value, max(1, width-2), "...") + "_"
+	return activeBorder.Width(width).Padding(0, 1).Render(strings.Join([]string{
 		headerStyle.Render(title),
 		input,
 		"",
-		renderHelpLine(newHelpModel(), 50, bindings, helpLineOptions{}),
+		renderHelpLine(newHelpModel(), width, bindings, helpLineOptions{}),
 	}, "\n"))
 }
 

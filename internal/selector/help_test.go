@@ -59,4 +59,10 @@ func TestSearchOverlayUsesSharedHelpStyles(t *testing.T) {
 	if !strings.Contains(view, hintStyle.Render("search")) {
 		t.Fatalf("overlay description not faint: %q", view)
 	}
+	plain := ansi.Strip(view)
+	for _, expected := range []string{"enter search", "esc cancel", "ctrl-w word", "ctrl-u clear"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("search help missing %q: %q", expected, plain)
+		}
+	}
 }

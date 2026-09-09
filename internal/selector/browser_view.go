@@ -59,13 +59,13 @@ func (m browserModel[T]) View() string {
 	case overlayHelp:
 		modal = m.helpModal()
 	case overlayCustomPlayer:
-		modal = inputModal("Custom player", m.customPlayerValue, []key.Binding{
+		modal = inputModal("Custom player", m.customPlayerValue, 50, []key.Binding{
 			hintBinding("enter", "save"),
 			hintBinding("esc", "cancel"),
 			hintBinding("ctrl-u", "clear"),
 		})
 	case overlayProviderAPIKey:
-		modal = inputModal("TorBox API key", strings.Repeat("*", len([]rune(m.providerAPIKeyValue))), []key.Binding{
+		modal = inputModal("TorBox API key", strings.Repeat("*", len([]rune(m.providerAPIKeyValue))), 50, []key.Binding{
 			hintBinding("enter", "save"),
 			hintBinding("esc", "cancel"),
 			hintBinding("ctrl-w", "word"),
@@ -78,7 +78,7 @@ func (m browserModel[T]) View() string {
 	case overlayMode:
 		modal = modeModal(m.contextModes())
 	case overlayQuery:
-		modal = inputModal("Search", m.query, []key.Binding{
+		modal = inputModal("Search", m.query, 64, []key.Binding{
 			hintBinding("enter", "search"),
 			hintBinding("esc", "cancel"),
 			hintBinding("ctrl-w", "word"),
@@ -89,7 +89,7 @@ func (m browserModel[T]) View() string {
 		if m.focusRight {
 			filter = m.right.filter
 		}
-		modal = inputModal("Filter active pane", filter, []key.Binding{
+		modal = inputModal("Filter active pane", filter, 50, []key.Binding{
 			hintBinding("enter", "apply"),
 			hintBinding("esc", "clear"),
 			hintBinding("ctrl-w", "word"),
