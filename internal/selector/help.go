@@ -58,7 +58,7 @@ func browserKeys() browserKeyMap {
 
 func newHelpModel() help.Model {
 	h := help.New()
-	h.ShortSeparator = "  "
+	h.ShortSeparator = " "
 	h.Styles = help.Styles{
 		ShortKey:       headerStyle,
 		ShortDesc:      hintStyle,
