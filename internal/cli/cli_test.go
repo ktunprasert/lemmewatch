@@ -27,6 +27,9 @@ func TestHelpForms(t *testing.T) {
 }
 
 func TestRootWithoutQueryShowsDashboard(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	t.Setenv("XDG_CACHE_HOME", root)
 	cmd := New()
 	var out bytes.Buffer
 	cmd.SetOut(&out)

@@ -15,6 +15,7 @@ import (
 	"lemmewatch/internal/player"
 	"lemmewatch/internal/provider"
 	"lemmewatch/internal/selector"
+	"lemmewatch/internal/storage"
 	"lemmewatch/internal/torbox"
 )
 
@@ -30,6 +31,7 @@ type App struct {
 	Player           player.Player
 	DefaultPlayer    player.Player
 	PlayerOverridden bool
+	Storage          *storage.Storage
 	In               io.Reader
 	Out              io.Writer
 	Err              io.Writer
@@ -310,22 +312,22 @@ func (a App) Watch(ctx context.Context, query string) error {
 }
 
 func (a App) History(ctx context.Context) error {
-	items, err := loadHistoryMedia()
+	items, err := a.loadHistoryMedia()
 	if err != nil {
 		return fmt.Errorf("read history: %w", err)
 	}
 	return a.browseMedia(ctx, items, "History", "History", nil, false)
 }
 
-func loadHistoryMedia() ([]model.Media, error) {
-	entries, err := config.History()
+func (a App) loadHistoryMedia() ([]model.Media, error) {
+	entries, err := a.Storage.History()
 	if err != nil {
 		return nil, err
 	}
 	return historyMedia(entries), nil
 }
 
-func historyMedia(entries []config.HistoryEntry) []model.Media {
+func historyMedia(entries []storage.HistoryEntry) []model.Media {
 	items := make([]model.Media, 0, len(entries))
 	for _, entry := range entries {
 		mediaType := model.MediaType(entry.Type)
@@ -338,7 +340,7 @@ func historyMedia(entries []config.HistoryEntry) []model.Media {
 }
 
 func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle, initialQuery string, parentGroups []string, initialSearch bool) error {
-	watched, err := config.Watched()
+	watched, err := a.Storage.Watched()
 	if err != nil {
 		return fmt.Errorf("read watched state: %w", err)
 	}
@@ -531,11 +533,11 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			if err != nil {
 				return err
 			}
-			entry := config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}
+			entry := storage.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}
 			if selected.episode.ID != "" {
 				entry.Episodes = []string{fmt.Sprintf("%d:%d", selected.episode.Season, selected.episode.Episode)}
 			}
-			if err := config.RecordHistory(entry); err != nil {
+			if err := a.Storage.RecordHistory(entry); err != nil {
 				return fmt.Errorf("record history: %w", err)
 			}
 			if err := a.Player.Play(playContext, playback); err != nil {
@@ -549,7 +551,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		},
 		Requery: requery,
 		History: func(context.Context) ([]navigationChoice, error) {
-			media, err := loadHistoryMedia()
+			media, err := a.loadHistoryMedia()
 			if err != nil {
 				return nil, err
 			}
@@ -562,11 +564,11 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		Watched: watched,
 		ToggleWatched: func(_ context.Context, selected navigationChoice) (map[string]bool, error) {
 			_, keys := selected.WatchIdentity()
-			state, err := config.ToggleWatched(config.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}, keys)
+			state, err := a.Storage.ToggleWatched(storage.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}, keys)
 			return map[string]bool(state), err
 		},
 		RemoveHistory: func(_ context.Context, selected navigationChoice) error {
-			return config.RemoveHistory(selected.media.ID)
+			return a.Storage.RemoveHistory(selected.media.ID)
 		},
 	})
 	if err != nil {

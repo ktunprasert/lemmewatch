@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.10.1
+	go.etcd.io/bbolt v1.4.3
 	golang.org/x/sys v0.38.0
 )
 

@@ -20,6 +20,7 @@ import (
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/player"
 	"lemmewatch/internal/provider"
+	"lemmewatch/internal/storage"
 	"lemmewatch/internal/stremio"
 	"lemmewatch/internal/torbox"
 )
@@ -30,16 +31,17 @@ func New() *cobra.Command {
 	a := configuredApp(&verbose)
 	root := &cobra.Command{
 		Use: "lemmewatch [QUERY...]", Short: "Find and stream media", Version: buildinfo.Commit, SilenceUsage: true, SilenceErrors: true,
-		Args:              cobra.ArbitraryArgs,
-		PersistentPreRunE: func(*cobra.Command, []string) error { return a.ValidateProvider() },
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if forcedQuery != "" {
-				return a.Watch(cmd.Context(), forcedQueryText(forcedQuery, args))
-			}
-			if len(args) == 0 {
-				return a.Dashboard(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
-			}
-			return a.Watch(cmd.Context(), strings.Join(args, " "))
+			return withStorage(a, func() error {
+				if forcedQuery != "" {
+					return a.Watch(cmd.Context(), forcedQueryText(forcedQuery, args))
+				}
+				if len(args) == 0 {
+					return a.Dashboard(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+				}
+				return a.Watch(cmd.Context(), strings.Join(args, " "))
+			})
 		},
 	}
 	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
@@ -51,11 +53,27 @@ func New() *cobra.Command {
 
 func historyCommand(a app.App) *cobra.Command {
 	return &cobra.Command{Use: "history", Short: "Browse recently played titles", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		return a.History(cmd.Context())
+		return withStorage(a, func() error { return a.History(cmd.Context()) })
 	}}
 }
 
+func withStorage(a app.App, run func() error) (err error) {
+	if err := a.ValidateProvider(); err != nil {
+		return err
+	}
+	if err := a.Storage.Open(); err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := a.Storage.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+	return run()
+}
+
 func configuredApp(verbose *bool) app.App {
+	store := storage.New()
 	httpClient := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Verbose: verbose, Output: os.Stderr}}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ForceAttemptHTTP2 = false
@@ -121,12 +139,15 @@ func configuredApp(verbose *bool) app.App {
 		Player:           player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose, ConfigError: playerConfigError},
 		DefaultPlayer:    defaultPlayerConfig,
 		PlayerOverridden: os.Getenv("LEMMEWATCH_PLAYER") != "",
+		Storage:          store,
 		In:               os.Stdin, Out: os.Stdout, Err: os.Stderr,
 	}
 }
 
 func watchCommand(a app.App) *cobra.Command {
-	return &cobra.Command{Use: "watch QUERY...", Short: "Find and play a movie", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error { return a.Watch(cmd.Context(), strings.Join(args, " ")) }}
+	return &cobra.Command{Use: "watch QUERY...", Short: "Find and play a movie", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return withStorage(a, func() error { return a.Watch(cmd.Context(), strings.Join(args, " ")) })
+	}}
 }
 
 func searchCommand(a app.App) *cobra.Command {
@@ -139,14 +160,16 @@ func searchCommand(a app.App) *cobra.Command {
 		if kind == "all" {
 			mediaType = ""
 		}
-		items, err := a.Search(cmd.Context(), strings.Join(args, " "), mediaType)
-		if err != nil {
-			return err
-		}
-		for _, item := range items {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", item.ID, item.Type, item.Name)
-		}
-		return nil
+		return withStorage(a, func() error {
+			items, err := a.Search(cmd.Context(), strings.Join(args, " "), mediaType)
+			if err != nil {
+				return err
+			}
+			for _, item := range items {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", item.ID, item.Type, item.Name)
+			}
+			return nil
+		})
 	}}
 	cmd.Flags().StringVar(&kind, "type", "all", "media type: all, movie, or series")
 	return cmd
@@ -154,43 +177,49 @@ func searchCommand(a app.App) *cobra.Command {
 
 func streamsCommand(a app.App) *cobra.Command {
 	return &cobra.Command{Use: "streams IMDB_ID", Short: "List stream candidates", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		items, err := a.LookupStreams(cmd.Context(), args[0])
-		if err != nil {
-			return err
-		}
-		for _, s := range items {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d\t%t\t%dp\t%d\t%d\t%s\n", s.Provider, s.Hash, s.FileIndex, s.Playable, s.Quality, s.Seeders, s.Size, oneLine(s.Title))
-		}
-		return nil
+		return withStorage(a, func() error {
+			items, err := a.LookupStreams(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			for _, s := range items {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d\t%t\t%dp\t%d\t%d\t%s\n", s.Provider, s.Hash, s.FileIndex, s.Playable, s.Quality, s.Seeders, s.Size, oneLine(s.Title))
+			}
+			return nil
+		})
 	}}
 }
 
 func cacheCommand(a app.App) *cobra.Command {
 	return &cobra.Command{Use: "cache HASH...", Short: "Check TorBox cache", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		cached, err := a.Cache(cmd.Context(), args)
-		if err != nil {
-			return err
-		}
-		for _, hash := range args {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%t\n", hash, cached[hash])
-		}
-		return nil
+		return withStorage(a, func() error {
+			cached, err := a.Cache(cmd.Context(), args)
+			if err != nil {
+				return err
+			}
+			for _, hash := range args {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%t\n", hash, cached[hash])
+			}
+			return nil
+		})
 	}}
 }
 
 func playCommand(a app.App) *cobra.Command {
 	var index int
 	cmd := &cobra.Command{Use: "play HASH", Short: "Resolve cached torrent and launch player", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if a.TorBox.Token == "" {
-			return fmt.Errorf("TORBOX_API_TOKEN is required")
-		}
-		fmt.Fprintln(cmd.ErrOrStderr(), "Resolving stream through TorBox...")
-		u, err := a.TorBox.Resolve(cmd.Context(), args[0], index)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(cmd.ErrOrStderr(), "Launching player...")
-		return a.Player.Play(cmd.Context(), model.Playback{URL: u})
+		return withStorage(a, func() error {
+			if a.TorBox.Token == "" {
+				return fmt.Errorf("TORBOX_API_TOKEN is required")
+			}
+			fmt.Fprintln(cmd.ErrOrStderr(), "Resolving stream through TorBox...")
+			u, err := a.TorBox.Resolve(cmd.Context(), args[0], index)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.ErrOrStderr(), "Launching player...")
+			return a.Player.Play(cmd.Context(), model.Playback{URL: u})
+		})
 	}}
 	cmd.Flags().IntVar(&index, "file-index", 0, "video file index")
 	return cmd
