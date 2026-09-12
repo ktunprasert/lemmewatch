@@ -5,11 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"lemmewatch/internal/model"
+	"lemmewatch/internal/storage"
 	"lemmewatch/internal/stremio"
 	"lemmewatch/internal/torbox"
 )
@@ -130,6 +133,58 @@ func TestTorBoxProviderOwnsCacheEnrichment(t *testing.T) {
 	}
 	if len(streams) != 1 || streams[0].Provider != TorBoxID || streams[0].Cache != model.CacheCached || !streams[0].Playable {
 		t.Fatalf("streams = %#v", streams)
+	}
+}
+
+func TestTorBoxCachesOnlyStableCandidatesAndRefreshesAvailability(t *testing.T) {
+	hash := "0123456789abcdef0123456789abcdef01234567"
+	streamRequests := 0
+	cacheRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/stream/movie/tt1.json":
+			streamRequests++
+			_, _ = w.Write([]byte(`{"streams":[{"name":"Torrentio 1080p","title":"Release 1080p","infoHash":"` + hash + `","fileIdx":0,"url":"https://signed.example/secret","behaviorHints":{"proxyHeaders":{"request":{"Authorization":"secret"}}}}]}`))
+		case "/torrents/checkcached":
+			cacheRequests++
+			_, _ = w.Write([]byte(`{"success":true,"data":{"` + hash + `":true}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	store := storage.NewAt(filepath.Join(root, "history.db"), filepath.Join(root, "cache.db"), filepath.Join(root, "history.json"))
+	if err := store.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	p := TorBox{
+		StreamsClient: stremio.Client{BaseURL: server.URL, HTTP: server.Client()},
+		TorBoxClient:  torbox.Client{BaseURL: server.URL, Token: "token", HTTP: server.Client()},
+		Storage:       store,
+	}
+	request := Request{MediaType: model.Movie, ID: "tt1"}
+	for range 2 {
+		if _, err := p.Streams(context.Background(), request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request.Refresh = true
+	if _, err := p.Streams(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if streamRequests != 2 || cacheRequests != 3 {
+		t.Fatalf("requests = stream %d, cache %d", streamRequests, cacheRequests)
+	}
+	key := storage.SourceFingerprint(server.URL) + ":movie:tt1"
+	var candidates []torrentCandidate
+	hit, err := store.CacheGet(storage.CacheTorrents, key, &candidates)
+	if err != nil || !hit || len(candidates) != 1 {
+		t.Fatalf("candidate cache = %t, %#v, %v", hit, candidates, err)
+	}
+	if strings.Contains(candidates[0].Title+candidates[0].Filename+candidates[0].Source, "secret") {
+		t.Fatalf("cached candidate contains secret: %#v", candidates[0])
 	}
 }
 

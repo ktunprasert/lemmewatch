@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,56 @@ func TestSearchPreservesCatalogRelevanceWithinMediaType(t *testing.T) {
 	}
 	if strings.Join(series, ",") != "Yellow,Beta" {
 		t.Fatalf("series order = %#v", series)
+	}
+}
+
+func TestSearchUsesPersistentCache(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{"metas":[{"id":"tt1","type":"movie","name":"Dune"}]}`))
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	store := storage.NewAt(filepath.Join(root, "history.db"), filepath.Join(root, "cache.db"), filepath.Join(root, "history.json"))
+	if err := store.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	a := App{Catalog: catalog.Client{BaseURL: server.URL, HTTP: server.Client()}, Storage: store, Err: io.Discard}
+	for range 2 {
+		items, err := a.Search(context.Background(), "Dune", model.Movie)
+		if err != nil || len(items) != 1 {
+			t.Fatalf("search = %#v, %v", items, err)
+		}
+	}
+	if requests != 1 {
+		t.Fatalf("catalog requests = %d", requests)
+	}
+}
+
+func TestSeriesEpisodesUsePersistentCache(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{"meta":{"videos":[{"id":"tt1:1:1","name":"Pilot","season":1,"episode":1}]}}`))
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	store := storage.NewAt(filepath.Join(root, "history.db"), filepath.Join(root, "cache.db"), filepath.Join(root, "history.json"))
+	if err := store.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	a := App{Catalog: catalog.Client{BaseURL: server.URL, HTTP: server.Client()}, Storage: store}
+	for range 2 {
+		episodes, err := a.seriesEpisodes(context.Background(), "tt1", false)
+		if err != nil || len(episodes) != 1 {
+			t.Fatalf("episodes = %#v, %v", episodes, err)
+		}
+	}
+	if requests != 1 {
+		t.Fatalf("catalog requests = %d", requests)
 	}
 }
 

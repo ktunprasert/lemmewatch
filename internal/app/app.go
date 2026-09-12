@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -93,6 +94,11 @@ const (
 	navigationSeason
 	navigationEpisode
 	navigationStream
+)
+
+const (
+	searchCacheTTL = 24 * time.Hour
+	seriesCacheTTL = 30 * 24 * time.Hour
 )
 
 type navigationChoice struct {
@@ -220,7 +226,7 @@ func (a App) Search(ctx context.Context, query string, kind model.MediaType) ([]
 
 func (a App) searchCatalog(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
 	if kind != "" {
-		return a.Catalog.Search(ctx, kind, query)
+		return a.searchCatalogType(ctx, query, kind)
 	}
 	type result struct {
 		items []model.Media
@@ -232,7 +238,7 @@ func (a App) searchCatalog(ctx context.Context, query string, kind model.MediaTy
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			items, err := a.Catalog.Search(ctx, mediaType, query)
+			items, err := a.searchCatalogType(ctx, query, mediaType)
 			results <- result{items, err}
 		}()
 	}
@@ -259,6 +265,36 @@ func (a App) searchCatalog(ctx context.Context, query string, kind model.MediaTy
 		return nil, firstErr
 	}
 	return items, nil
+}
+
+func (a App) searchCatalogType(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
+	key := storage.SourceFingerprint(a.Catalog.BaseURL) + ":" + string(kind) + ":" + strings.ToLower(strings.TrimSpace(query))
+	var items []model.Media
+	if a.Storage != nil {
+		if hit, _ := a.Storage.CacheGet(storage.CacheSearch, key, &items); hit {
+			return items, nil
+		}
+	}
+	items, err := a.Catalog.Search(ctx, kind, query)
+	if err == nil && a.Storage != nil {
+		_ = a.Storage.CachePut(storage.CacheSearch, key, items, searchCacheTTL)
+	}
+	return items, err
+}
+
+func (a App) seriesEpisodes(ctx context.Context, imdbID string, refresh bool) ([]model.Episode, error) {
+	key := storage.SourceFingerprint(a.Catalog.BaseURL) + ":" + imdbID
+	var episodes []model.Episode
+	if !refresh && a.Storage != nil {
+		if hit, _ := a.Storage.CacheGet(storage.CacheSeries, key, &episodes); hit {
+			return episodes, nil
+		}
+	}
+	episodes, err := a.Catalog.Episodes(ctx, imdbID)
+	if err == nil && a.Storage != nil {
+		_ = a.Storage.CachePut(storage.CacheSeries, key, episodes, seriesCacheTTL)
+	}
+	return episodes, err
 }
 
 func (a App) LookupStreams(ctx context.Context, imdbID string) ([]model.Stream, error) {
@@ -373,7 +409,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 				streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Movie, ID: selected.media.ID, Title: selected.media.Name})
 				return streamChoices(selected.media, model.Episode{}, streams, streamErr)
 			}
-			episodes, err := a.Catalog.Episodes(ctx, selected.media.ID)
+			episodes, err := a.seriesEpisodes(ctx, selected.media.ID, false)
 			if err != nil {
 				return nil, err
 			}

@@ -96,7 +96,7 @@ func configuredApp(verbose *bool) app.App {
 	webstreamrClient := stremio.Client{BaseURL: env("LEMMEWATCH_WEBSTREAMR_URL", "https://87d6a6ef6b58-webstreamrmbg.baby-beamup.club"), HTTP: httpClient}
 	providers := map[string]provider.Provider{
 		provider.WebStreamrID: provider.WebStreamr{Client: webstreamrClient},
-		provider.TorBoxID:     provider.TorBox{StreamsClient: torrentioClient, TorBoxClient: torboxClient},
+		provider.TorBoxID:     provider.TorBox{StreamsClient: torrentioClient, TorBoxClient: torboxClient, Storage: store},
 	}
 	providerNames := []string{provider.TorBoxID, provider.WebStreamrID}
 	penguURL := os.Getenv("LEMMEWATCH_PENGUPLAY_MANIFEST_URL")
