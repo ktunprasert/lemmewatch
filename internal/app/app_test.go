@@ -67,11 +67,19 @@ func TestSearchUsesPersistentCache(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	a := App{Catalog: catalog.Client{BaseURL: server.URL, HTTP: server.Client()}, Storage: store, Err: io.Discard}
-	for range 2 {
-		items, err := a.Search(context.Background(), "Dune", model.Movie)
-		if err != nil || len(items) != 1 {
-			t.Fatalf("search = %#v, %v", items, err)
-		}
+	items, err := a.Search(context.Background(), "Dune", model.Movie)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("search = %#v, %v", items, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatal(err)
+	}
+	items, err = a.Search(context.Background(), "Dune", model.Movie)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("reopened search = %#v, %v", items, err)
 	}
 	if requests != 1 {
 		t.Fatalf("catalog requests = %d", requests)
@@ -80,8 +88,13 @@ func TestSearchUsesPersistentCache(t *testing.T) {
 
 func TestSeriesEpisodesUsePersistentCache(t *testing.T) {
 	requests := 0
+	fail := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests++
+		if fail {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		_, _ = w.Write([]byte(`{"meta":{"videos":[{"id":"tt1:1:1","name":"Pilot","season":1,"episode":1}]}}`))
 	}))
 	defer server.Close()
@@ -92,17 +105,36 @@ func TestSeriesEpisodesUsePersistentCache(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	a := App{Catalog: catalog.Client{BaseURL: server.URL, HTTP: server.Client()}, Storage: store}
-	for range 2 {
-		episodes, err := a.seriesEpisodes(context.Background(), "tt1", false)
-		if err != nil || len(episodes) != 1 {
-			t.Fatalf("episodes = %#v, %v", episodes, err)
-		}
+	episodes, err := a.seriesEpisodes(context.Background(), "tt1", false)
+	if err != nil || len(episodes) != 1 {
+		t.Fatalf("episodes = %#v, %v", episodes, err)
 	}
-	if _, err := a.seriesEpisodes(context.Background(), "tt1", true); err != nil {
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatal(err)
+	}
+	episodes, err = a.seriesEpisodes(context.Background(), "tt1", false)
+	if err != nil || len(episodes) != 1 {
+		t.Fatalf("reopened episodes = %#v, %v", episodes, err)
+	}
+	fail = true
+	if _, err := a.seriesEpisodes(context.Background(), "tt1", true); err == nil {
+		t.Fatal("failed refresh succeeded")
+	}
+	episodes, err = a.seriesEpisodes(context.Background(), "tt1", false)
+	if err != nil || len(episodes) != 1 {
+		t.Fatalf("cache lost after failed refresh = %#v, %v", episodes, err)
 	}
 	if requests != 2 {
 		t.Fatalf("catalog requests = %d", requests)
+	}
+}
+
+func TestCatalogCacheTTLs(t *testing.T) {
+	if searchCacheTTL != 24*time.Hour || seriesCacheTTL != 30*24*time.Hour {
+		t.Fatalf("cache TTLs = %v, %v", searchCacheTTL, seriesCacheTTL)
 	}
 }
 

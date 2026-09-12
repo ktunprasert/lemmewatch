@@ -114,7 +114,7 @@ func TestLegacyHistoryMigratesOnce(t *testing.T) {
 	if err := storage.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(legacy+".migrated", legacy); err != nil {
+	if err := os.WriteFile(legacy, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := storage.Open(); err != nil {
@@ -124,6 +124,33 @@ func TestLegacyHistoryMigratesOnce(t *testing.T) {
 	entries, err = storage.History()
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("history was reimported: %#v, %v", entries, err)
+	}
+}
+
+func TestLegacyArchiveFailureRetries(t *testing.T) {
+	root := t.TempDir()
+	legacy := filepath.Join(root, "history.json")
+	if err := os.WriteFile(legacy, []byte(`[{"id":"tt1","title":"Dune","type":"movie","played_at":"2026-01-01T00:00:00Z"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(legacy+".migrated", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	storage := NewAt(filepath.Join(root, "history.db"), filepath.Join(root, "cache.db"), legacy)
+	if err := storage.Open(); err == nil {
+		storage.Close()
+		t.Fatal("migration succeeded without archiving legacy history")
+	}
+	if err := os.Remove(legacy + ".migrated"); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = storage.Close() })
+	entries, err := storage.History()
+	if err != nil || len(entries) != 1 || entries[0].ID != "tt1" {
+		t.Fatalf("history = %#v, %v", entries, err)
 	}
 }
 

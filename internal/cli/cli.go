@@ -75,6 +75,13 @@ func withStorage(a app.App, run func() error) (err error) {
 	return run()
 }
 
+func withProvider(a app.App, run func() error) error {
+	if err := a.ValidateProvider(); err != nil {
+		return err
+	}
+	return run()
+}
+
 func configuredApp(verbose *bool) app.App {
 	store := storage.New()
 	httpClient := &http.Client{Timeout: 20 * time.Second, Transport: httpx.LoggingTransport{Verbose: verbose, Output: os.Stderr}}
@@ -195,7 +202,7 @@ func streamsCommand(a app.App) *cobra.Command {
 
 func cacheCommand(a app.App) *cobra.Command {
 	return &cobra.Command{Use: "cache HASH...", Short: "Check TorBox cache", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		return withStorage(a, func() error {
+		return withProvider(a, func() error {
 			cached, err := a.Cache(cmd.Context(), args)
 			if err != nil {
 				return err
@@ -211,7 +218,7 @@ func cacheCommand(a app.App) *cobra.Command {
 func playCommand(a app.App) *cobra.Command {
 	var index int
 	cmd := &cobra.Command{Use: "play HASH", Short: "Resolve cached torrent and launch player", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		return withStorage(a, func() error {
+		return withProvider(a, func() error {
 			if a.TorBox.Token == "" {
 				return fmt.Errorf("TORBOX_API_TOKEN is required")
 			}

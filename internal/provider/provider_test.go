@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	bolt "go.etcd.io/bbolt"
+
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/storage"
 	"lemmewatch/internal/stremio"
@@ -154,7 +156,8 @@ func TestTorBoxCachesOnlyStableCandidatesAndRefreshesAvailability(t *testing.T) 
 	}))
 	defer server.Close()
 	root := t.TempDir()
-	store := storage.NewAt(filepath.Join(root, "history.db"), filepath.Join(root, "cache.db"), filepath.Join(root, "history.json"))
+	cachePath := filepath.Join(root, "cache.db")
+	store := storage.NewAt(filepath.Join(root, "history.db"), cachePath, filepath.Join(root, "history.json"))
 	if err := store.Open(); err != nil {
 		t.Fatal(err)
 	}
@@ -165,10 +168,17 @@ func TestTorBoxCachesOnlyStableCandidatesAndRefreshesAvailability(t *testing.T) 
 		Storage:       store,
 	}
 	request := Request{MediaType: model.Movie, ID: "tt1"}
-	for range 2 {
-		if _, err := p.Streams(context.Background(), request); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := p.Streams(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Streams(context.Background(), request); err != nil {
+		t.Fatal(err)
 	}
 	request.Refresh = true
 	if _, err := p.Streams(context.Background(), request); err != nil {
@@ -185,6 +195,30 @@ func TestTorBoxCachesOnlyStableCandidatesAndRefreshesAvailability(t *testing.T) 
 	}
 	if strings.Contains(candidates[0].Title+candidates[0].Filename+candidates[0].Source, "secret") {
 		t.Fatalf("cached candidate contains secret: %#v", candidates[0])
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err := bolt.Open(cachePath, 0o600, &bolt.Options{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	var raw string
+	if err := database.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("cache:" + storage.CacheTorrents))
+		if bucket != nil {
+			raw = string(bucket.Get([]byte(key)))
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if raw == "" {
+		t.Fatal("torrent cache entry missing")
+	}
+	if strings.Contains(raw, "signed.example") || strings.Contains(raw, "Authorization") || strings.Contains(raw, "secret") {
+		t.Fatalf("cache persisted URL or credentials: %s", raw)
 	}
 }
 

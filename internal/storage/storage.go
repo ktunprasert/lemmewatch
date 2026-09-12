@@ -22,7 +22,7 @@ type Storage struct {
 	legacyPath  string
 	now         func() time.Time
 
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	history  *bolt.DB
 	cache    *bolt.DB
 	cacheErr error
@@ -106,8 +106,8 @@ func (s *Storage) Close() error {
 }
 
 func (s *Storage) CacheError() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.cacheErr
 }
 

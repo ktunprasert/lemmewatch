@@ -92,3 +92,42 @@ func TestStorageCreatesPrivateDatabaseFiles(t *testing.T) {
 		}
 	}
 }
+
+type blockingValue struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (value *blockingValue) UnmarshalJSON([]byte) error {
+	close(value.started)
+	<-value.release
+	return nil
+}
+
+func TestCloseWaitsForActiveCacheRead(t *testing.T) {
+	storage := openTestStorage(t)
+	if err := storage.CachePut(CacheSearch, "key", "value", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	value := blockingValue{started: make(chan struct{}), release: make(chan struct{})}
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := storage.CacheGet(CacheSearch, "key", &value)
+		readDone <- err
+	}()
+	<-value.started
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- storage.Close() }()
+	select {
+	case err := <-closeDone:
+		t.Fatalf("storage closed during cache read: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(value.release)
+	if err := <-readDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatal(err)
+	}
+}

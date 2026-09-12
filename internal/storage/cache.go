@@ -27,6 +27,8 @@ type cacheEntry struct {
 }
 
 func (s *Storage) CacheGet(namespace, key string, destination any) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.cache == nil {
 		return false, errors.New("cache storage is not open")
 	}
@@ -51,6 +53,8 @@ func (s *Storage) CacheGet(namespace, key string, destination any) (bool, error)
 }
 
 func (s *Storage) CachePut(namespace, key string, value any, ttl time.Duration) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.cache == nil {
 		return errors.New("cache storage is not open")
 	}

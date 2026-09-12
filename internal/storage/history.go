@@ -29,6 +29,16 @@ type HistoryEntry struct {
 type WatchedState map[string]bool
 
 func (s *Storage) migrateLegacyHistory() error {
+	var migrated bool
+	if err := s.history.View(func(tx *bolt.Tx) error {
+		if metadata := tx.Bucket(metadataBucket); metadata != nil {
+			migrated = metadata.Get(historyMigration) != nil
+		}
+		return nil
+	}); err != nil || migrated {
+		return err
+	}
+
 	legacy, readErr := os.ReadFile(s.legacyPath)
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		return readErr
@@ -40,15 +50,7 @@ func (s *Storage) migrateLegacyHistory() error {
 		}
 	}
 
-	imported := false
 	err := s.history.Update(func(tx *bolt.Tx) error {
-		metadata, err := tx.CreateBucketIfNotExists(metadataBucket)
-		if err != nil {
-			return err
-		}
-		if metadata.Get(historyMigration) != nil {
-			return nil
-		}
 		history, err := tx.CreateBucketIfNotExists(historyBucket)
 		if err != nil {
 			return err
@@ -57,20 +59,29 @@ func (s *Storage) migrateLegacyHistory() error {
 			if err := history.Put(historyEntries, legacy); err != nil {
 				return err
 			}
-			imported = true
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if readErr == nil {
+		if err := os.Rename(s.legacyPath, s.legacyPath+".migrated"); err != nil {
+			return fmt.Errorf("archive legacy history: %w", err)
+		}
+	}
+	return s.history.Update(func(tx *bolt.Tx) error {
+		metadata, err := tx.CreateBucketIfNotExists(metadataBucket)
+		if err != nil {
+			return err
 		}
 		return metadata.Put(historyMigration, []byte{1})
 	})
-	if err != nil || !imported {
-		return err
-	}
-	if err := os.Rename(s.legacyPath, s.legacyPath+".migrated"); err != nil {
-		return fmt.Errorf("archive legacy history: %w", err)
-	}
-	return nil
 }
 
 func (s *Storage) History() ([]HistoryEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.history == nil {
 		return nil, errors.New("history storage is not open")
 	}
@@ -170,6 +181,8 @@ func (s *Storage) RemoveHistory(id string) error {
 }
 
 func (s *Storage) updateHistory(update func([]HistoryEntry) ([]HistoryEntry, error)) ([]HistoryEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.history == nil {
 		return nil, errors.New("history storage is not open")
 	}
