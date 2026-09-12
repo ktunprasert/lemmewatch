@@ -144,6 +144,10 @@ or navigate back through episodes and titles while it runs. Native `open`,
 `lemmewatch history` opens up to 100 recently played top-level IMDb titles in
 the browser. History starts as a single root pane without movie/series tabs;
 opening titles uses the same season, episode, torrent, and playback flow.
+When History loads, `+` in its status column means the unexpired series
+metadata cache may contain a newer aired episode than the highest watched
+episode. This indicator is intentionally approximate and never triggers a
+network request.
 Press `Ctrl-H` from search or History to open the History root. Press `Ctrl-P`
 from either root to run a new movie/series search and restore its tabs.
 Press `w` on a root title to add it to or remove it from history. In History,

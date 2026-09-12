@@ -225,6 +225,13 @@ func (n navigationChoice) SortFields() (string, int, time.Time, bool) {
 	return n.media.Name, n.media.Year, n.playedAt, n.kind == navigationMedia
 }
 
+func (n navigationChoice) Status(watched map[string]bool) string {
+	if n.kind == navigationMedia && n.media.UpdateEpisode != "" && !watched[n.media.ID+":"+n.media.UpdateEpisode] {
+		return "+"
+	}
+	return ""
+}
+
 func (a App) Search(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
 	fmt.Fprintf(a.Err, "Searching catalog for %q...\n", query)
 	return a.searchCatalog(ctx, query, kind)
@@ -289,7 +296,7 @@ func (a App) searchCatalogType(ctx context.Context, query string, kind model.Med
 }
 
 func (a App) seriesEpisodes(ctx context.Context, imdbID string, refresh bool) ([]model.Episode, error) {
-	key := storage.SourceFingerprint(a.Catalog.BaseURL) + ":" + imdbID
+	key := a.seriesCacheKey(imdbID)
 	var episodes []model.Episode
 	if !refresh && a.Storage != nil {
 		if hit, _ := a.Storage.CacheGet(storage.CacheSeries, key, &episodes); hit {
@@ -301,6 +308,10 @@ func (a App) seriesEpisodes(ctx context.Context, imdbID string, refresh bool) ([
 		_ = a.Storage.CachePut(storage.CacheSeries, key, episodes, seriesCacheTTL)
 	}
 	return episodes, err
+}
+
+func (a App) seriesCacheKey(imdbID string) string {
+	return storage.SourceFingerprint(a.Catalog.BaseURL) + ":" + imdbID
 }
 
 func (a App) LookupStreams(ctx context.Context, imdbID string) ([]model.Stream, error) {
@@ -366,7 +377,81 @@ func (a App) loadHistoryMedia() ([]model.Media, error) {
 	if err != nil {
 		return nil, err
 	}
-	return historyMedia(entries), nil
+	items := historyMedia(entries)
+	byID := make(map[string]storage.HistoryEntry, len(entries))
+	for _, entry := range entries {
+		byID[entry.ID] = entry
+	}
+	now := time.Now()
+	for i := range items {
+		if items[i].Type != model.Series {
+			continue
+		}
+		entry := byID[items[i].ID]
+		if len(entry.Episodes) == 0 {
+			continue
+		}
+		var episodes []model.Episode
+		if hit, _ := a.Storage.CacheGet(storage.CacheSeries, a.seriesCacheKey(items[i].ID), &episodes); !hit {
+			continue
+		}
+		latest, ok := possibleEpisodeUpdate(entry.Episodes, episodes, now)
+		if ok {
+			items[i].UpdateEpisode = fmt.Sprintf("%d:%d", latest.Season, latest.Episode)
+		}
+	}
+	return items, nil
+}
+
+type episodePosition struct {
+	season  int
+	episode int
+}
+
+func possibleEpisodeUpdate(watchedKeys []string, episodes []model.Episode, now time.Time) (model.Episode, bool) {
+	var watched episodePosition
+	hasWatched := false
+	for _, key := range watchedKeys {
+		position, ok := parseEpisodePosition(key)
+		if ok && (!hasWatched || position.after(watched)) {
+			watched = position
+			hasWatched = true
+		}
+	}
+	if !hasWatched {
+		return model.Episode{}, false
+	}
+
+	var latest model.Episode
+	hasLatest := false
+	for _, episode := range episodes {
+		if episode.Season <= 0 || episode.Episode <= 0 || episode.Released.IsZero() || episode.Released.After(now) {
+			continue
+		}
+		position := episodePosition{season: episode.Season, episode: episode.Episode}
+		if !hasLatest || position.after(episodePosition{season: latest.Season, episode: latest.Episode}) {
+			latest = episode
+			hasLatest = true
+		}
+	}
+	return latest, hasLatest && (episodePosition{season: latest.Season, episode: latest.Episode}).after(watched)
+}
+
+func parseEpisodePosition(key string) (episodePosition, bool) {
+	seasonText, episodeText, ok := strings.Cut(key, ":")
+	if !ok || strings.Contains(episodeText, ":") {
+		return episodePosition{}, false
+	}
+	season, seasonErr := strconv.Atoi(seasonText)
+	episode, episodeErr := strconv.Atoi(episodeText)
+	if seasonErr != nil || episodeErr != nil || season <= 0 || episode <= 0 {
+		return episodePosition{}, false
+	}
+	return episodePosition{season: season, episode: episode}, true
+}
+
+func (p episodePosition) after(other episodePosition) bool {
+	return p.season > other.season || p.season == other.season && p.episode > other.episode
 }
 
 func historyMedia(entries []storage.HistoryEntry) []model.Media {

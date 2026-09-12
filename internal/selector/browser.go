@@ -157,6 +157,7 @@ type contextualItem interface {
 type unavailableItem interface{ Unavailable() bool }
 type cacheableItem interface{ CacheKey() string }
 type watchableItem interface{ WatchIdentity() (string, []string) }
+type statusItem interface{ Status(map[string]bool) string }
 
 func isWatched(value any, state map[string]bool) bool {
 	if terminal, ok := value.(terminalItem); ok && terminal.Terminal() {

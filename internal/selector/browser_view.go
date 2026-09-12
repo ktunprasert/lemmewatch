@@ -283,6 +283,11 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 			if isWatched(items[i].item, watched) {
 				indicator = "✓ "
 			}
+			if status, ok := any(items[i].item).(statusItem); ok {
+				if value := status.Status(watched); value != "" {
+					indicator = value + " "
+				}
+			}
 			label = indicator + label
 			context := ""
 			if contextual, ok := any(items[i].item).(contextualItem); ok {

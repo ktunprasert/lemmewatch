@@ -27,12 +27,14 @@ type testChoice struct {
 	playable    bool
 	watchID     string
 	watchKeys   []string
+	status      string
 }
 
 func (c testChoice) ContextModes() []ContextMode       { return c.modes }
 func (c testChoice) Unavailable() bool                 { return c.unavailable }
 func (c testChoice) CacheKey() string                  { return c.cacheKey }
 func (c testChoice) WatchIdentity() (string, []string) { return c.watchID, c.watchKeys }
+func (c testChoice) Status(map[string]bool) string     { return c.status }
 
 func (c testChoice) Label() string  { return c.label }
 func (c testChoice) Group() string  { return c.group }
@@ -71,6 +73,15 @@ func TestHistoryRootOmitsSearchAndTabControls(t *testing.T) {
 		if binding.keys == "Tab" || binding.keys == "Ctrl-P" {
 			t.Fatalf("history exposed unavailable binding: %#v", binding)
 		}
+	}
+}
+
+func TestItemStatusReplacesWatchedIndicator(t *testing.T) {
+	m := newBrowser(testChoice{label: "Series", watchID: "tt1", status: "+"})
+	m.options.Watched = map[string]bool{"tt1": true}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "+ Series") || strings.Contains(view, "✓ Series") {
+		t.Fatalf("status row = %q", view)
 	}
 }
 

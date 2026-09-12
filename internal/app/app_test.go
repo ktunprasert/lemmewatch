@@ -162,6 +162,55 @@ func TestHistoryMediaPreservesPlayableEntries(t *testing.T) {
 	}
 }
 
+func TestPossibleEpisodeUpdateUsesNumericMaximumAiredEpisode(t *testing.T) {
+	now := time.Date(2026, time.September, 12, 0, 0, 0, 0, time.UTC)
+	episodes := []model.Episode{
+		{Season: 1, Episode: 10, Released: now.Add(-24 * time.Hour)},
+		{Season: 1, Episode: 11, Released: now.Add(24 * time.Hour)},
+	}
+	latest, ok := possibleEpisodeUpdate([]string{"1:9"}, episodes, now)
+	if !ok || latest.Season != 1 || latest.Episode != 10 {
+		t.Fatalf("update = %#v, %t", latest, ok)
+	}
+	if _, ok := possibleEpisodeUpdate([]string{"1:10"}, episodes, now); ok {
+		t.Fatal("future episode triggered update")
+	}
+	if _, ok := possibleEpisodeUpdate(nil, episodes, now); ok {
+		t.Fatal("series without episode baseline triggered update")
+	}
+}
+
+func TestHistoryMediaMarksUpdatesFromSeriesCache(t *testing.T) {
+	root := t.TempDir()
+	store := storage.NewAt(filepath.Join(root, "history.db"), filepath.Join(root, "cache.db"), filepath.Join(root, "history.json"))
+	if err := store.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	a := App{Catalog: catalog.Client{BaseURL: "https://catalog.example"}, Storage: store}
+	if err := store.RecordHistory(storage.HistoryEntry{ID: "tt1", Title: "Series", Type: "series", Episodes: []string{"2:8"}}); err != nil {
+		t.Fatal(err)
+	}
+	episodes := []model.Episode{{Season: 2, Episode: 9, Released: time.Now().Add(-time.Hour)}}
+	if err := store.CachePut(storage.CacheSeries, a.seriesCacheKey("tt1"), episodes, seriesCacheTTL); err != nil {
+		t.Fatal(err)
+	}
+	items, err := a.loadHistoryMedia()
+	if err != nil || len(items) != 1 || items[0].UpdateEpisode != "2:9" {
+		t.Fatalf("history = %#v, %v", items, err)
+	}
+}
+
+func TestEpisodeUpdateStatusTracksLiveWatchedState(t *testing.T) {
+	choice := navigationChoice{kind: navigationMedia, media: model.Media{ID: "tt1", Type: model.Series, UpdateEpisode: "2:9"}}
+	if choice.Status(nil) != "+" {
+		t.Fatal("possible update status missing")
+	}
+	if choice.Status(map[string]bool{"tt1:2:9": true}) != "" {
+		t.Fatal("watched update retained status")
+	}
+}
+
 func TestHistoryChoiceHasDatePlayedMode(t *testing.T) {
 	playedAt := time.Date(2025, time.January, 2, 3, 4, 0, 0, time.Local)
 	modes := (navigationChoice{kind: navigationMedia, playedAt: playedAt}).ContextModes()
