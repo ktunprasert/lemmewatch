@@ -48,6 +48,20 @@ func TestHelpLineCanDisableRightColumn(t *testing.T) {
 	}
 }
 
+func TestHelpRowShowsRefreshOnlyWhenAvailable(t *testing.T) {
+	refreshable := newBrowser(testChoice{label: "Dune", cacheKey: "streams:tt1"})
+	plain := ansi.Strip(refreshable.help.ShortHelpView(refreshable.shortHelp(browserKeys())))
+	if !strings.Contains(plain, "r/F5 refresh") {
+		t.Fatalf("refresh hint missing: %q", plain)
+	}
+
+	unrefreshable := newBrowser(testChoice{label: "Season 1"})
+	plain = ansi.Strip(unrefreshable.help.ShortHelpView(unrefreshable.shortHelp(browserKeys())))
+	if strings.Contains(plain, "r/F5 refresh") {
+		t.Fatalf("refresh hint shown without refresh action: %q", plain)
+	}
+}
+
 func TestSearchOverlayUsesSharedHelpStyles(t *testing.T) {
 	m := newBrowser(testChoice{label: "Dune"})
 	m.width = 100

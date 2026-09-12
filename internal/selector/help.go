@@ -29,6 +29,7 @@ type browserKeyMap struct {
 	Watched key.Binding
 	Remove  key.Binding
 	Back    key.Binding
+	Refresh key.Binding
 }
 
 func browserKeys() browserKeyMap {
@@ -53,6 +54,7 @@ func browserKeys() browserKeyMap {
 		Watched: key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "watched")),
 		Remove:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "remove")),
 		Back:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		Refresh: key.NewBinding(key.WithKeys("r", "f5"), key.WithHelp("r/F5", "refresh")),
 	}
 }
 
@@ -105,6 +107,9 @@ func (m browserModel[T]) shortHelp(k browserKeyMap) []key.Binding {
 	bindings := make([]key.Binding, 0, 16)
 	if m.playback.busy() {
 		bindings = append(bindings, k.Stop)
+	}
+	if m.canRefresh() {
+		bindings = append(bindings, k.Refresh)
 	}
 	if m.options.ToggleWatched != nil && !rightStreams {
 		bindings = append(bindings, k.Watched)

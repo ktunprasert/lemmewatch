@@ -396,14 +396,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		case "G":
 			m.move(1 << 30)
 		case "r", "f5":
-			if !m.loading {
+			if m.canRefresh() {
 				items := m.filteredCurrent()
-				if len(items) > 0 {
-					selected := items[m.current().index].item
-					if cacheable, ok := any(selected).(cacheableItem); ok && cacheable.CacheKey() != "" {
-						return m.loadSelected(selected, true)
-					}
-				}
+				return m.loadSelected(items[m.current().index].item, true)
 			}
 		case "n":
 			if m.canSwitchEpisode() {
@@ -630,6 +625,18 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 		items, err := load(m.ctx, selected)
 		return loaded[T]{items: items, err: err, key: key, provider: m.provider, loadID: loadID}
 	}
+}
+
+func (m browserModel[T]) canRefresh() bool {
+	if m.loading {
+		return false
+	}
+	items := m.filteredCurrent()
+	if len(items) == 0 {
+		return false
+	}
+	cacheable, ok := any(items[m.current().index].item).(cacheableItem)
+	return ok && cacheable.CacheKey() != ""
 }
 
 func (m browserModel[T]) switchEpisode(direction int) (tea.Model, tea.Cmd) {
