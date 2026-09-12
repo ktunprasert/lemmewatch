@@ -66,6 +66,26 @@ structured arguments and never run through a shell. Failures are appended to
 `$XDG_STATE_HOME/lemmewatch/errors.log` (normally
 `~/.local/state/lemmewatch/errors.log`) with URLs redacted.
 
+## Storage
+
+Saved settings remain in `lemmewatch/preferences.json` under the platform's user
+config directory. Copy that file to move only settings to another machine. It
+contains the saved TorBox token in plain text and is created with user-only file
+permissions, so transfer it securely. Environment variables, `.env`, logs,
+history, caches, installed players, and OS URL associations are not included.
+
+History and watched state live in `lemmewatch/history.db` under the user config
+directory. On first launch, an existing `history.json` is imported atomically
+and renamed to `history.json.migrated`. Lemmewatch holds this bbolt database for
+the command's lifetime. A second session waits up to 250 milliseconds, then
+exits with a message asking the user to close the active session. Help and
+version output do not open storage.
+
+Rebuildable data lives in `lemmewatch/cache.db` under the platform's user cache
+directory. This directory normally survives reboots but may be removed by the
+OS, cleanup tools, or the user. Cache failures do not prevent searches or
+playback. Expired entries are deleted lazily and database pages are reused.
+
 ## Usage
 
 ```text
@@ -128,8 +148,13 @@ Press `Ctrl-H` from search or History to open the History root. Press `Ctrl-P`
 from either root to run a new movie/series search and restore its tabs.
 Press `w` on a root title to add it to or remove it from history. In History,
 press `d` to remove the selected title.
-Episode stream results are cached per provider for the current browser session.
-Press `r` on an episode or its stream pane to refresh provider results.
+Search results are cached for 24 hours. Complete series season and episode
+metadata is cached for 30 days. Stable Torrentio candidates are cached for 24
+hours, while TorBox availability is checked when those candidates load into a
+browser session. Temporary WebStreamr and Pengu URLs remain session-only and are
+never written to disk. Press `r` or `F5` on a series, movie, episode, or its
+child pane to refresh the selected data. Failed refreshes leave the last good
+disk cache available for the next load.
 Right/`l` opens the active left item when its child pane is not loaded; only `q`
 exits the browser.
 
