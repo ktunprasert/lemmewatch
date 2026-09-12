@@ -161,3 +161,22 @@ func TestSecondSessionTimesOut(t *testing.T) {
 		t.Fatalf("lock timeout = %v", elapsed)
 	}
 }
+
+func TestUnavailableCacheDoesNotBlockHistory(t *testing.T) {
+	root := t.TempDir()
+	blockedParent := filepath.Join(root, "blocked")
+	if err := os.WriteFile(blockedParent, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	storage := NewAt(filepath.Join(root, "history.db"), filepath.Join(blockedParent, "cache.db"), filepath.Join(root, "history.json"))
+	if err := storage.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = storage.Close() })
+	if storage.CacheError() == nil {
+		t.Fatal("cache open failure was not retained")
+	}
+	if err := storage.RecordHistory(HistoryEntry{ID: "tt1", Title: "Dune", Type: "movie"}); err != nil {
+		t.Fatalf("history failed without cache: %v", err)
+	}
+}

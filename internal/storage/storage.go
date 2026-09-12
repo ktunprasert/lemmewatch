@@ -22,9 +22,10 @@ type Storage struct {
 	legacyPath  string
 	now         func() time.Time
 
-	mu      sync.Mutex
-	history *bolt.DB
-	cache   *bolt.DB
+	mu       sync.Mutex
+	history  *bolt.DB
+	cache    *bolt.DB
+	cacheErr error
 }
 
 func New() *Storage {
@@ -67,11 +68,11 @@ func (s *Storage) Open() error {
 
 	cache, err := open(s.cachePath)
 	if err != nil {
-		s.history.Close()
-		s.history = nil
-		return storageOpenError(err)
+		s.cacheErr = storageOpenError(err)
+		return nil
 	}
 	s.cache = cache
+	s.cacheErr = nil
 	return nil
 }
 
@@ -102,6 +103,12 @@ func (s *Storage) Close() error {
 		s.history = nil
 	}
 	return errors.Join(errs...)
+}
+
+func (s *Storage) CacheError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cacheErr
 }
 
 func SourceFingerprint(source string) string {

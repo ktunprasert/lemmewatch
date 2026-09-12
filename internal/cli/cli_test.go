@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,6 +55,21 @@ func TestVersionShowsBuildCommit(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "lemmewatch development") {
 		t.Fatalf("version = %q", out.String())
+	}
+}
+
+func TestHelpDoesNotOpenStorage(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	t.Setenv("XDG_CACHE_HOME", root)
+	cmd := New()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "lemmewatch")); !os.IsNotExist(err) {
+		t.Fatalf("help created storage: %v", err)
 	}
 }
 

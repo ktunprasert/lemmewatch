@@ -64,6 +64,9 @@ func withStorage(a app.App, run func() error) (err error) {
 	if err := a.Storage.Open(); err != nil {
 		return err
 	}
+	if err := a.Storage.CacheError(); err != nil {
+		_ = config.LogFailure("open cache", err)
+	}
 	defer func() {
 		if closeErr := a.Storage.Close(); err == nil {
 			err = closeErr
