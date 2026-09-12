@@ -375,7 +375,7 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "Ctrl-U", label: "Move half-page up", key: tea.KeyMsg{Type: tea.KeyCtrlU}},
 		{keys: "gg", label: "Move to first item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g', 'g'}}},
 		{keys: "G", label: "Move to last item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}},
-		{keys: "r", label: "Refresh episode torrents", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}},
+		{keys: "r / F5", label: "Refresh selected data", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}},
 		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
 		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
 		{keys: "m", label: "Choose detail mode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}},

@@ -184,7 +184,13 @@ func (n navigationChoice) Unavailable() bool {
 	return n.kind == navigationEpisode && !n.episode.Released.IsZero() && n.episode.Released.After(time.Now())
 }
 func (n navigationChoice) CacheKey() string {
-	if n.kind == navigationEpisode {
+	switch n.kind {
+	case navigationMedia:
+		if n.media.Type == model.Series {
+			return "series:" + n.media.ID
+		}
+		return "streams:" + n.media.ID
+	case navigationEpisode:
 		return "streams:" + n.episode.ID
 	}
 	return ""
@@ -398,7 +404,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		}
 		return choices, nil
 	}
-	_, err = selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
+	load := func(ctx context.Context, selected navigationChoice, refresh bool) ([]navigationChoice, error) {
 		switch selected.kind {
 		case navigationMedia:
 			selectedProvider, err := a.provider(providerID)
@@ -406,10 +412,10 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 				return nil, err
 			}
 			if selected.media.Type == model.Movie {
-				streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Movie, ID: selected.media.ID, Title: selected.media.Name})
+				streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Movie, ID: selected.media.ID, Title: selected.media.Name, Refresh: refresh})
 				return streamChoices(selected.media, model.Episode{}, streams, streamErr)
 			}
-			episodes, err := a.seriesEpisodes(ctx, selected.media.ID, false)
+			episodes, err := a.seriesEpisodes(ctx, selected.media.ID, refresh)
 			if err != nil {
 				return nil, err
 			}
@@ -443,11 +449,14 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			if err != nil {
 				return nil, err
 			}
-			streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Series, ID: selected.episode.ID, Title: selected.media.Name, Season: selected.episode.Season, Episode: selected.episode.Episode})
+			streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Series, ID: selected.episode.ID, Title: selected.media.Name, Season: selected.episode.Season, Episode: selected.episode.Episode, Refresh: refresh})
 			return streamChoices(selected.media, selected.episode, streams, streamErr)
 		default:
 			return nil, fmt.Errorf("item cannot be opened")
 		}
+	}
+	_, err = selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
+		return load(ctx, selected, false)
 	}, selector.BrowserOptions[navigationChoice]{
 		InitialTitle:      initialTitle,
 		InitialQuery:      initialQuery,
@@ -480,6 +489,9 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			default:
 				return "Streams"
 			}
+		},
+		Refresh: func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
+			return load(ctx, selected, true)
 		},
 		SaveGroup: func(group string) error {
 			preferences.MediaTab = group

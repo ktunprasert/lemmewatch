@@ -37,6 +37,7 @@ type BrowserOptions[T item] struct {
 	SavePlayer          func(string) error
 	SaveMode            func(string, string) error
 	ChildTitle          func(T) string
+	Refresh             func(context.Context, T) ([]T, error)
 	Play                func(context.Context, T) error
 	Progress            func() <-chan string
 	Requery             func(context.Context, string) ([]T, error)
@@ -394,7 +395,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.pendingG = true
 		case "G":
 			m.move(1 << 30)
-		case "r":
+		case "r", "f5":
 			if !m.loading {
 				items := m.filteredCurrent()
 				if len(items) > 0 {
@@ -621,8 +622,12 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 	m.loading = true
 	m.loadID++
 	loadID := m.loadID
+	load := m.load
+	if refresh && m.options.Refresh != nil {
+		load = m.options.Refresh
+	}
 	return m, func() tea.Msg {
-		items, err := m.load(m.ctx, selected)
+		items, err := load(m.ctx, selected)
 		return loaded[T]{items: items, err: err, key: key, provider: m.provider, loadID: loadID}
 	}
 }

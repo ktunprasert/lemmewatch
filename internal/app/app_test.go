@@ -98,8 +98,20 @@ func TestSeriesEpisodesUsePersistentCache(t *testing.T) {
 			t.Fatalf("episodes = %#v, %v", episodes, err)
 		}
 	}
-	if requests != 1 {
+	if _, err := a.seriesEpisodes(context.Background(), "tt1", true); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
 		t.Fatalf("catalog requests = %d", requests)
+	}
+}
+
+func TestNavigationCacheKeysCoverSeriesMoviesAndEpisodes(t *testing.T) {
+	series := navigationChoice{kind: navigationMedia, media: model.Media{ID: "tt1", Type: model.Series}}
+	movie := navigationChoice{kind: navigationMedia, media: model.Media{ID: "tt2", Type: model.Movie}}
+	episode := navigationChoice{kind: navigationEpisode, episode: model.Episode{ID: "tt1:1:1"}}
+	if series.CacheKey() != "series:tt1" || movie.CacheKey() != "streams:tt2" || episode.CacheKey() != "streams:tt1:1:1" {
+		t.Fatalf("cache keys = %q, %q, %q", series.CacheKey(), movie.CacheKey(), episode.CacheKey())
 	}
 }
 

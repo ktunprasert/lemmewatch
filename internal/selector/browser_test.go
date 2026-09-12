@@ -270,6 +270,26 @@ func TestEpisodeChildrenUseCacheUntilRefresh(t *testing.T) {
 	}
 }
 
+func TestF5UsesRefreshLoader(t *testing.T) {
+	m := newBrowser(testChoice{label: "movie", cacheKey: "streams:movie"})
+	m.load = func(context.Context, testChoice) ([]testChoice, error) {
+		return []testChoice{{label: "cached", terminal: true}}, nil
+	}
+	m.options.Refresh = func(context.Context, testChoice) ([]testChoice, error) {
+		return []testChoice{{label: "fresh", terminal: true}}, nil
+	}
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyF5})
+	m = next.(browserModel[testChoice])
+	if command == nil {
+		t.Fatal("F5 did not refresh")
+	}
+	next, _ = m.Update(command())
+	m = next.(browserModel[testChoice])
+	if len(m.right.items) != 1 || m.right.items[0].label != "fresh" {
+		t.Fatalf("refresh result = %#v", m.right.items)
+	}
+}
+
 func TestNextAndPreviousEpisodesCrossSeasonBoundaries(t *testing.T) {
 	season1 := testChoice{label: "Season 1"}
 	season2 := testChoice{label: "Season 2"}
