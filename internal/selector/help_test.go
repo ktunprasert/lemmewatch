@@ -30,6 +30,24 @@ func TestHelpRowHighlightsKeysAndShowsVersion(t *testing.T) {
 	}
 }
 
+func TestBottomHelpCombinesNavigationAndOmitsEnter(t *testing.T) {
+	m := newBrowser(testChoice{label: "Dune"})
+	bindings := m.shortHelp(browserKeys())
+	foundNavigation := false
+	for _, binding := range bindings {
+		help := binding.Help()
+		if help.Key == "hjkl" && help.Desc == "move" {
+			foundNavigation = true
+		}
+		if help.Key == "enter" {
+			t.Fatal("bottom help contains Enter hint")
+		}
+	}
+	if !foundNavigation {
+		t.Fatal("bottom help missing combined hjkl navigation hint")
+	}
+}
+
 func TestHelpLinePreservesFullVersionWhenNarrow(t *testing.T) {
 	line := renderHelpLine(newHelpModel(), 4, []key.Binding{
 		hintBinding("q", "quit"),
