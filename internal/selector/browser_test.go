@@ -13,27 +13,29 @@ import (
 )
 
 type testChoice struct {
-	label       string
-	group       string
-	terminal    bool
-	cached      bool
-	quality     int
-	year        int
-	playedAt    time.Time
-	modes       []ContextMode
-	unavailable bool
-	cacheKey    string
-	direct      bool
-	playable    bool
-	watchID     string
-	watchKeys   []string
-	status      string
+	label        string
+	group        string
+	terminal     bool
+	cached       bool
+	quality      int
+	year         int
+	playedAt     time.Time
+	modes        []ContextMode
+	unavailable  bool
+	cacheKey     string
+	direct       bool
+	playable     bool
+	watchID      string
+	watchKeys    []string
+	watchThrough bool
+	status       string
 }
 
 func (c testChoice) ContextModes() []ContextMode       { return c.modes }
 func (c testChoice) Unavailable() bool                 { return c.unavailable }
 func (c testChoice) CacheKey() string                  { return c.cacheKey }
 func (c testChoice) WatchIdentity() (string, []string) { return c.watchID, c.watchKeys }
+func (c testChoice) WatchThrough() bool                { return c.watchThrough }
 func (c testChoice) Status(map[string]bool) string     { return c.status }
 
 func (c testChoice) Label() string  { return c.label }
@@ -1192,6 +1194,61 @@ func TestBrowserTogglesWatchedEpisodeInRightPane(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(m.View()), "w watched") {
 		t.Fatalf("right-pane watched hint missing: %q", ansi.Strip(m.View()))
+	}
+}
+
+func TestBrowserTogglesWatchedThroughSelectedEpisode(t *testing.T) {
+	m := newBrowser(testChoice{label: "Season 1", watchID: "show"})
+	m.focusRight = true
+	m.right = pane[testChoice]{title: "Episodes", index: 1, items: []testChoice{
+		{label: "Episode 1", watchID: "show", watchKeys: []string{"1:1"}, watchThrough: true},
+		{label: "Episode 2", watchID: "show", watchKeys: []string{"1:2"}, watchThrough: true},
+		{label: "Episode 3", watchID: "show", watchKeys: []string{"1:3"}, watchThrough: true},
+	}}
+	calls := 0
+	m.options.ToggleWatched = func(context.Context, testChoice) (map[string]bool, error) { return nil, nil }
+	m.options.ToggleWatchedThrough = func(_ context.Context, selected []testChoice) (map[string]bool, error) {
+		calls++
+		if len(selected) != 2 || selected[0].label != "Episode 1" || selected[1].label != "Episode 2" {
+			t.Fatalf("watched through = %#v", selected)
+		}
+		if calls == 1 {
+			return map[string]bool{"show:1:1": true, "show:1:2": true}, nil
+		}
+		return map[string]bool{}, nil
+	}
+	if hint := ansi.Strip(m.View()); !strings.Contains(hint, "w/W watched") {
+		t.Fatalf("watched-through hint missing: %q", hint)
+	}
+
+	for _, expectedWatched := range []bool{true, false} {
+		next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}})
+		m = next.(browserModel[testChoice])
+		if command == nil || !m.historyBusy {
+			t.Fatal("watched-through toggle did not start")
+		}
+		next, _ = m.Update(runAsync(command))
+		m = next.(browserModel[testChoice])
+		if m.options.Watched["show:1:1"] != expectedWatched || m.options.Watched["show:1:2"] != expectedWatched {
+			t.Fatalf("watched state = %#v", m.options.Watched)
+		}
+	}
+}
+
+func TestBrowserDoesNotOfferWatchedThroughAtMediaRoot(t *testing.T) {
+	m := newBrowser(testChoice{label: "Series", watchID: "show"})
+	m.options.ToggleWatched = func(context.Context, testChoice) (map[string]bool, error) { return nil, nil }
+	m.options.ToggleWatchedThrough = func(context.Context, []testChoice) (map[string]bool, error) {
+		t.Fatal("root triggered watched-through callback")
+		return nil, nil
+	}
+	if hint := ansi.Strip(m.View()); !strings.Contains(hint, "w watched") || strings.Contains(hint, "w/W watched") {
+		t.Fatalf("root watched hint = %q", hint)
+	}
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}})
+	m = next.(browserModel[testChoice])
+	if command != nil || m.historyBusy {
+		t.Fatalf("root accepted W: %#v", m)
 	}
 }
 

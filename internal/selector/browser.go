@@ -15,37 +15,38 @@ import (
 )
 
 type BrowserOptions[T item] struct {
-	InitialTitle        string
-	InitialQuery        string
-	InitialSearch       bool
-	Version             string
-	ParentGroups        []string
-	PreferredGroup      string
-	PreferredQuality    int
-	PreferredCached     *bool
-	PreferredProvider   string
-	PreferredPlayer     string
-	Providers           []string
-	PreferredModes      map[string]string
-	ModeOptions         map[string][]ContextMode
-	SaveGroup           func(string) error
-	SaveQuality         func(int) error
-	SaveCached          func(bool) error
-	SaveProvider        func(string) error
-	ProviderNeedsAPIKey func(string) bool
-	SaveProviderAPIKey  func(string, string) error
-	SavePlayer          func(string) error
-	SaveMode            func(string, string) error
-	ChildTitle          func(T) string
-	Refresh             func(context.Context, T) ([]T, error)
-	Play                func(context.Context, T) error
-	Progress            func() <-chan string
-	Requery             func(context.Context, string) ([]T, error)
-	History             func(context.Context) ([]T, error)
-	Watched             map[string]bool
-	ToggleWatched       func(context.Context, T) (map[string]bool, error)
-	RemoveHistory       func(context.Context, T) error
-	SearchGroups        []string
+	InitialTitle         string
+	InitialQuery         string
+	InitialSearch        bool
+	Version              string
+	ParentGroups         []string
+	PreferredGroup       string
+	PreferredQuality     int
+	PreferredCached      *bool
+	PreferredProvider    string
+	PreferredPlayer      string
+	Providers            []string
+	PreferredModes       map[string]string
+	ModeOptions          map[string][]ContextMode
+	SaveGroup            func(string) error
+	SaveQuality          func(int) error
+	SaveCached           func(bool) error
+	SaveProvider         func(string) error
+	ProviderNeedsAPIKey  func(string) bool
+	SaveProviderAPIKey   func(string, string) error
+	SavePlayer           func(string) error
+	SaveMode             func(string, string) error
+	ChildTitle           func(T) string
+	Refresh              func(context.Context, T) ([]T, error)
+	Play                 func(context.Context, T) error
+	Progress             func() <-chan string
+	Requery              func(context.Context, string) ([]T, error)
+	History              func(context.Context) ([]T, error)
+	Watched              map[string]bool
+	ToggleWatched        func(context.Context, T) (map[string]bool, error)
+	ToggleWatchedThrough func(context.Context, []T) (map[string]bool, error)
+	RemoveHistory        func(context.Context, T) error
+	SearchGroups         []string
 }
 
 type groupedItem interface{ Group() string }
@@ -157,6 +158,7 @@ type contextualItem interface {
 type unavailableItem interface{ Unavailable() bool }
 type cacheableItem interface{ CacheKey() string }
 type watchableItem interface{ WatchIdentity() (string, []string) }
+type watchThroughItem interface{ WatchThrough() bool }
 type statusItem interface{ Status(map[string]bool) string }
 
 func isWatched(value any, state map[string]bool) bool {
@@ -444,6 +446,14 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 				m.historyBusy = true
 				return m, tea.Batch(func() tea.Msg {
 					watched, err := m.options.ToggleWatched(m.ctx, selected)
+					return historyChanged[T]{watched: watched, watchChanged: true, err: err}
+				}, spinnerCommand())
+			}
+		case "W":
+			if selected, ok := m.watchThroughSelection(); ok && m.options.ToggleWatchedThrough != nil {
+				m.historyBusy = true
+				return m, tea.Batch(func() tea.Msg {
+					watched, err := m.options.ToggleWatchedThrough(m.ctx, selected)
 					return historyChanged[T]{watched: watched, watchChanged: true, err: err}
 				}, spinnerCommand())
 			}
@@ -861,6 +871,38 @@ func (m browserModel[T]) selectedWatchable() (T, bool) {
 	selected := items[clamp(m.current().index, len(items))].item
 	_, ok := any(selected).(watchableItem)
 	return selected, ok
+}
+
+func (m browserModel[T]) watchThroughSelection() ([]T, bool) {
+	var all []T
+	var visible []indexed[T]
+	index := 0
+	if m.focusRight {
+		if m.rightHasStreams() {
+			return nil, false
+		}
+		all = m.right.items
+		visible = m.filteredRight()
+		index = m.right.index
+	} else {
+		all = m.current().items
+		visible = m.filteredCurrent()
+		index = m.current().index
+	}
+	if len(visible) == 0 {
+		return nil, false
+	}
+	selected := visible[clamp(index, len(visible))]
+	through, ok := any(selected.item).(watchThroughItem)
+	if !ok || !through.WatchThrough() {
+		return nil, false
+	}
+	return all[:selected.index+1], true
+}
+
+func (m browserModel[T]) canWatchThrough() bool {
+	_, ok := m.watchThroughSelection()
+	return ok
 }
 
 func (m *browserModel[T]) current() *pane[T] { return &m.levels[len(m.levels)-1] }

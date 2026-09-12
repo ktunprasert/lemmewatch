@@ -215,6 +215,9 @@ func (n navigationChoice) WatchIdentity() (string, []string) {
 		return n.media.ID, nil
 	}
 }
+func (n navigationChoice) WatchThrough() bool {
+	return n.kind == navigationSeason || n.kind == navigationEpisode
+}
 func (n navigationChoice) StreamInfo() (selector.StreamInfo, bool) {
 	return selector.StreamInfo{Cached: n.stream.Cache == model.CacheCached, CacheApplicable: n.stream.Cache != model.CacheNotApplicable, Playable: n.stream.Playable, Quality: n.stream.Quality}, n.kind == navigationStream
 }
@@ -696,8 +699,19 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		},
 		Watched: watched,
 		ToggleWatched: func(_ context.Context, selected navigationChoice) (map[string]bool, error) {
-			_, keys := selected.WatchIdentity()
-			state, err := a.Storage.ToggleWatched(storage.HistoryEntry{ID: selected.media.ID, Title: selected.media.Name, Type: string(selected.media.Type)}, keys)
+			entry, keys, err := historySelection([]navigationChoice{selected})
+			if err != nil {
+				return nil, err
+			}
+			state, err := a.Storage.ToggleWatched(entry, keys)
+			return map[string]bool(state), err
+		},
+		ToggleWatchedThrough: func(_ context.Context, selected []navigationChoice) (map[string]bool, error) {
+			entry, keys, err := historySelection(selected)
+			if err != nil {
+				return nil, err
+			}
+			state, err := a.Storage.ToggleWatched(entry, keys)
 			return map[string]bool(state), err
 		},
 		RemoveHistory: func(_ context.Context, selected navigationChoice) error {
@@ -708,6 +722,32 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		return err
 	}
 	return nil
+}
+
+func historySelection(selected []navigationChoice) (storage.HistoryEntry, []string, error) {
+	if len(selected) == 0 {
+		return storage.HistoryEntry{}, nil, fmt.Errorf("no watched items selected")
+	}
+	last := selected[len(selected)-1]
+	entry := storage.HistoryEntry{ID: last.media.ID, Title: last.media.Name, Type: string(last.media.Type)}
+	if entry.ID == "" {
+		return storage.HistoryEntry{}, nil, fmt.Errorf("watched item has no media identity")
+	}
+	seen := make(map[string]bool)
+	var keys []string
+	for _, item := range selected {
+		identity, itemKeys := item.WatchIdentity()
+		if identity != entry.ID {
+			return storage.HistoryEntry{}, nil, fmt.Errorf("watched items have different media identities")
+		}
+		for _, key := range itemKeys {
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
+		}
+	}
+	return entry, keys, nil
 }
 
 func streamChoices(media model.Media, episode model.Episode, streams []model.Stream, streamErr error) ([]navigationChoice, error) {

@@ -398,6 +398,9 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 	if m.options.ToggleWatched != nil {
 		bindings = append(bindings, helpBinding{keys: "w", label: "Toggle selected item watched", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}})
 	}
+	if m.options.ToggleWatchedThrough != nil && m.canWatchThrough() {
+		bindings = append(bindings, helpBinding{keys: "W", label: "Toggle watched through selected item", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}}})
+	}
 	if m.canSwitchEpisode() {
 		bindings = append(bindings,
 			helpBinding{keys: "n", label: "Load next episode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}},

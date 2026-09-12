@@ -9,46 +9,48 @@ import (
 )
 
 type browserKeyMap struct {
-	Keys     key.Binding
-	Groups   key.Binding
-	Mode     key.Binding
-	Sort     key.Binding
-	Navigate key.Binding
-	Home     key.Binding
-	History  key.Binding
-	Search   key.Binding
-	Filter   key.Binding
-	Quit     key.Binding
-	Episode  key.Binding
-	Cached   key.Binding
-	Quality  key.Binding
-	Stop     key.Binding
-	Watched  key.Binding
-	Remove   key.Binding
-	Back     key.Binding
-	Refresh  key.Binding
+	Keys           key.Binding
+	Groups         key.Binding
+	Mode           key.Binding
+	Sort           key.Binding
+	Navigate       key.Binding
+	Home           key.Binding
+	History        key.Binding
+	Search         key.Binding
+	Filter         key.Binding
+	Quit           key.Binding
+	Episode        key.Binding
+	Cached         key.Binding
+	Quality        key.Binding
+	Stop           key.Binding
+	Watched        key.Binding
+	WatchedThrough key.Binding
+	Remove         key.Binding
+	Back           key.Binding
+	Refresh        key.Binding
 }
 
 func browserKeys() browserKeyMap {
 	return browserKeyMap{
-		Keys:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "keys")),
-		Groups:   key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "movie/series")),
-		Mode:     key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mode")),
-		Sort:     key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort")),
-		Navigate: key.NewBinding(key.WithKeys("h", "j", "k", "l"), key.WithHelp("hjkl", "move")),
-		Home:     key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "home")),
-		History:  key.NewBinding(key.WithKeys("ctrl+h"), key.WithHelp("ctrl-h", "history")),
-		Search:   key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl-p", "search")),
-		Filter:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-		Quit:     key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
-		Episode:  key.NewBinding(key.WithKeys("n", "p"), key.WithHelp("n/p", "episode")),
-		Cached:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "cached/all")),
-		Quality:  key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "quality")),
-		Stop:     key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop")),
-		Watched:  key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "watched")),
-		Remove:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "remove")),
-		Back:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-		Refresh:  key.NewBinding(key.WithKeys("r", "f5"), key.WithHelp("r/F5", "refresh")),
+		Keys:           key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "keys")),
+		Groups:         key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "movie/series")),
+		Mode:           key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mode")),
+		Sort:           key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort")),
+		Navigate:       key.NewBinding(key.WithKeys("h", "j", "k", "l"), key.WithHelp("hjkl", "move")),
+		Home:           key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "home")),
+		History:        key.NewBinding(key.WithKeys("ctrl+h"), key.WithHelp("ctrl-h", "history")),
+		Search:         key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl-p", "search")),
+		Filter:         key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		Quit:           key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
+		Episode:        key.NewBinding(key.WithKeys("n", "p"), key.WithHelp("n/p", "episode")),
+		Cached:         key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "cached/all")),
+		Quality:        key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "quality")),
+		Stop:           key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop")),
+		Watched:        key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "watched")),
+		WatchedThrough: key.NewBinding(key.WithKeys("w", "W"), key.WithHelp("w/W", "watched")),
+		Remove:         key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "remove")),
+		Back:           key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		Refresh:        key.NewBinding(key.WithKeys("r", "f5"), key.WithHelp("r/F5", "refresh")),
 	}
 }
 
@@ -106,7 +108,11 @@ func (m browserModel[T]) shortHelp(k browserKeyMap) []key.Binding {
 		bindings = append(bindings, k.Refresh)
 	}
 	if m.options.ToggleWatched != nil && !rightStreams {
-		bindings = append(bindings, k.Watched)
+		if m.options.ToggleWatchedThrough != nil && m.canWatchThrough() {
+			bindings = append(bindings, k.WatchedThrough)
+		} else {
+			bindings = append(bindings, k.Watched)
+		}
 	}
 	if m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
 		bindings = append(bindings, k.Remove)

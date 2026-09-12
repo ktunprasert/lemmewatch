@@ -241,6 +241,21 @@ func TestNavigationWatchIdentities(t *testing.T) {
 	}
 }
 
+func TestHistorySelectionCombinesPreviousSeasons(t *testing.T) {
+	media := model.Media{ID: "tt1", Type: model.Series, Name: "Silo"}
+	selected := []navigationChoice{
+		{kind: navigationSeason, media: media, episodes: []model.Episode{{Season: 1, Episode: 1}, {Season: 1, Episode: 2}}},
+		{kind: navigationSeason, media: media, episodes: []model.Episode{{Season: 2, Episode: 1}}},
+	}
+	entry, keys, err := historySelection(selected)
+	if err != nil || entry.ID != "tt1" || strings.Join(keys, ",") != "1:1,1:2,2:1" {
+		t.Fatalf("history selection = %#v, %#v, %v", entry, keys, err)
+	}
+	if !selected[0].WatchThrough() || !(navigationChoice{kind: navigationEpisode}).WatchThrough() || (navigationChoice{kind: navigationMedia}).WatchThrough() || (navigationChoice{kind: navigationStream}).WatchThrough() {
+		t.Fatal("watched-through pane eligibility is incorrect")
+	}
+}
+
 func TestNavigationDetailModeDefaults(t *testing.T) {
 	cases := []struct {
 		choice navigationChoice

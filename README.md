@@ -151,7 +151,9 @@ network request.
 Press `Ctrl-H` from search or History to open the History root. Press `Ctrl-P`
 from either root to run a new movie/series search and restore its tabs.
 Press `w` on a root title to add it to or remove it from history. In History,
-press `d` to remove the selected title.
+press `d` to remove the selected title. In season and episode panes, `W` toggles
+every row through the selected row as watched or unwatched; `w` still toggles
+only the selected row.
 Search results are cached for 24 hours. Complete series season and episode
 metadata is cached for 30 days. Stable Torrentio candidates are cached for 24
 hours, while TorBox availability is checked when those candidates load into a
