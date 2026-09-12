@@ -122,6 +122,7 @@ type historyFinished[T item] struct {
 }
 type historyChanged[T item] struct {
 	items        []T
+	itemsChanged bool
 	watched      map[string]bool
 	watchChanged bool
 	err          error
@@ -316,16 +317,18 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.toasts.Clear()
 	case historyChanged[T]:
 		m.historyBusy = false
+		if msg.watchChanged && msg.watched != nil {
+			m.options.Watched = msg.watched
+		}
 		if msg.err != nil {
 			m.toasts.Err(ToastHistory, "History update failed: %s", msg.err.Error())
 			break
 		}
-		if m.inHistoryRoot() {
-			m.current().items = msg.items
-			m.current().index = clamp(m.current().index, len(msg.items))
+		if msg.itemsChanged && m.activeQuery == "History" && len(m.levels) > 0 {
+			m.levels[0].items = msg.items
+			m.levels[0].index = clamp(m.levels[0].index, len(msg.items))
 		}
 		if msg.watchChanged {
-			m.options.Watched = msg.watched
 			m.toasts.Set(ToastHistory, "Watched state updated")
 		} else {
 			m.toasts.Set(ToastHistory, "Removed from history")
@@ -446,7 +449,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 				m.historyBusy = true
 				return m, tea.Batch(func() tea.Msg {
 					watched, err := m.options.ToggleWatched(m.ctx, selected)
-					return historyChanged[T]{watched: watched, watchChanged: true, err: err}
+					return m.watchedChange(watched, err)
 				}, spinnerCommand())
 			}
 		case "W":
@@ -454,7 +457,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 				m.historyBusy = true
 				return m, tea.Batch(func() tea.Msg {
 					watched, err := m.options.ToggleWatchedThrough(m.ctx, selected)
-					return historyChanged[T]{watched: watched, watchChanged: true, err: err}
+					return m.watchedChange(watched, err)
 				}, spinnerCommand())
 			}
 		case "d":
@@ -465,7 +468,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 						return historyChanged[T]{err: err}
 					}
 					items, err := m.options.History(m.ctx)
-					return historyChanged[T]{items: items, err: err}
+					return historyChanged[T]{items: items, itemsChanged: true, err: err}
 				}, spinnerCommand())
 			}
 		case "tab":
@@ -534,6 +537,16 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		}
 	}
 	return m, nil
+}
+
+func (m browserModel[T]) watchedChange(watched map[string]bool, err error) historyChanged[T] {
+	changed := historyChanged[T]{watched: watched, watchChanged: true, err: err}
+	if err != nil || m.activeQuery != "History" || m.options.History == nil {
+		return changed
+	}
+	changed.items, changed.err = m.options.History(m.ctx)
+	changed.itemsChanged = changed.err == nil
+	return changed
 }
 
 func (m browserModel[T]) contextModes() []ContextMode {

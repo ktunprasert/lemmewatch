@@ -1197,6 +1197,30 @@ func TestBrowserTogglesWatchedEpisodeInRightPane(t *testing.T) {
 	}
 }
 
+func TestBrowserRefreshesHistoryStatusAfterNestedWatchedToggle(t *testing.T) {
+	m := newBrowser(testChoice{label: "Series", watchID: "show"})
+	m.levels[0].title = "History"
+	m.activeQuery = "History"
+	m.focusRight = true
+	m.right = pane[testChoice]{title: "Episodes", items: []testChoice{{label: "Episode 1", watchID: "show", watchKeys: []string{"1:1"}}}}
+	m.options.ToggleWatched = func(context.Context, testChoice) (map[string]bool, error) {
+		return map[string]bool{"show": true, "show:1:1": true}, nil
+	}
+	historyCalls := 0
+	m.options.History = func(context.Context) ([]testChoice, error) {
+		historyCalls++
+		return []testChoice{{label: "Series", watchID: "show", status: "+"}}, nil
+	}
+
+	next, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(runAsync(command))
+	m = next.(browserModel[testChoice])
+	if historyCalls != 1 || m.levels[0].items[0].status != "+" || m.right.items[0].label != "Episode 1" {
+		t.Fatalf("dynamic history status = %#v, calls = %d", m, historyCalls)
+	}
+}
+
 func TestBrowserTogglesWatchedThroughSelectedEpisode(t *testing.T) {
 	m := newBrowser(testChoice{label: "Season 1", watchID: "show"})
 	m.focusRight = true

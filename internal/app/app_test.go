@@ -201,6 +201,42 @@ func TestHistoryMediaMarksUpdatesFromSeriesCache(t *testing.T) {
 	}
 }
 
+func TestHistoryMediaMarksUpdateAfterFirstWatchedEpisode(t *testing.T) {
+	root := t.TempDir()
+	store := storage.NewAt(filepath.Join(root, "history.db"), filepath.Join(root, "cache.db"), filepath.Join(root, "history.json"))
+	if err := store.Open(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	a := App{Catalog: catalog.Client{BaseURL: "https://catalog.example"}, Storage: store}
+	entry := storage.HistoryEntry{ID: "tt1", Title: "Series", Type: "series"}
+	if err := store.RecordHistory(entry); err != nil {
+		t.Fatal(err)
+	}
+	episodes := []model.Episode{
+		{Season: 1, Episode: 1, Released: time.Now().Add(-2 * time.Hour)},
+		{Season: 1, Episode: 2, Released: time.Now().Add(-time.Hour)},
+	}
+	if err := store.CachePut(storage.CacheSeries, a.seriesCacheKey("tt1"), episodes, seriesCacheTTL); err != nil {
+		t.Fatal(err)
+	}
+	if items, err := a.loadHistoryMedia(); err != nil || items[0].UpdateEpisode != "" {
+		t.Fatalf("history before episode watch = %#v, %v", items, err)
+	}
+	watched, err := store.ToggleWatched(entry, []string{"1:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := a.loadHistoryMedia()
+	if err != nil || items[0].UpdateEpisode != "1:2" {
+		t.Fatalf("history after episode watch = %#v, %v", items, err)
+	}
+	choice := navigationChoice{kind: navigationMedia, media: items[0]}
+	if choice.Status(map[string]bool(watched)) != "+" {
+		t.Fatal("possible update status did not appear after episode watch")
+	}
+}
+
 func TestEpisodeUpdateStatusTracksLiveWatchedState(t *testing.T) {
 	choice := navigationChoice{kind: navigationMedia, media: model.Media{ID: "tt1", Type: model.Series, UpdateEpisode: "2:9"}}
 	if choice.Status(nil) != "+" {
