@@ -289,6 +289,8 @@ func TestEpisodeChildrenUseCacheUntilRefresh(t *testing.T) {
 
 func TestF5UsesRefreshLoader(t *testing.T) {
 	m := newBrowser(testChoice{label: "movie", cacheKey: "streams:movie"})
+	m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "cached", terminal: true}}}
+	m.focusRight = true
 	m.load = func(context.Context, testChoice) ([]testChoice, error) {
 		return []testChoice{{label: "cached", terminal: true}}, nil
 	}
@@ -304,6 +306,26 @@ func TestF5UsesRefreshLoader(t *testing.T) {
 	m = next.(browserModel[testChoice])
 	if len(m.right.items) != 1 || m.right.items[0].label != "fresh" {
 		t.Fatalf("refresh result = %#v", m.right.items)
+	}
+}
+
+func TestRootRefreshKeysAreDisabled(t *testing.T) {
+	for _, title := range []string{"Search", "History"} {
+		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'r'}}, {Type: tea.KeyF5}} {
+			m := newBrowser(testChoice{label: "Movie", cacheKey: "streams:movie"})
+			m.current().title = title
+			m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "cached", terminal: true}}}
+			next, cmd := m.Update(key)
+			m = next.(browserModel[testChoice])
+			if cmd != nil || m.loading || m.right.items[0].label != "cached" || m.canRefresh() {
+				t.Fatalf("%s root handled %s", title, key.String())
+			}
+			for _, binding := range m.filteredHelpBindings() {
+				if binding.keys == "r / F5" {
+					t.Fatal("root help offers disabled refresh")
+				}
+			}
+		}
 	}
 }
 

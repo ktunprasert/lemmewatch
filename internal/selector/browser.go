@@ -664,7 +664,7 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 }
 
 func (m browserModel[T]) canRefresh() bool {
-	if m.loading {
+	if m.loading || !m.focusRight && len(m.levels) == 1 {
 		return false
 	}
 	items := m.filteredCurrent()
