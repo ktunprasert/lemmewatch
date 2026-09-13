@@ -130,7 +130,7 @@ func spinnerCommand() tea.Cmd {
 
 func toastOverlay(message string, width int) string {
 	contentWidth := max(10, min(48, width-6))
-	styled := toastBorder.Render(ansi.Truncate(plainLabel(message), contentWidth, "..."))
+	styled := toastBorder.Render(ansi.Truncate(plainLabel(message), contentWidth, "…"))
 	return styled
 }
 

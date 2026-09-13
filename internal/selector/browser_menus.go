@@ -593,7 +593,7 @@ func (m browserModel[T]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func inputModal(title, value string, width int, bindings []key.Binding) string {
-	input := ansi.Truncate(value, max(1, width-2), "...") + "_"
+	input := ansi.Truncate(value, max(1, width-2), "…") + "_"
 	return activeBorder.Width(width).Padding(0, 1).Render(strings.Join([]string{
 		headerStyle.Render(title),
 		input,

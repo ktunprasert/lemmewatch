@@ -53,7 +53,7 @@ func (m browserModel[T]) View() string {
 	}
 	breadcrumb := m.breadcrumb()
 	helpText := renderHelpLine(m.help, width, m.shortHelp(browserKeys()), helpLineOptions{Right: m.options.Version, RightColumn: true})
-	base := ansi.Truncate(breadcrumb, width, "...") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + helpText + "\n"
+	base := ansi.Truncate(breadcrumb, width, "…") + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, rendered...) + "\n" + helpText + "\n"
 	var modal string
 	switch m.overlay {
 	case overlayHelp:
@@ -262,11 +262,11 @@ func groupTabs(groups []string, active int) string {
 
 func renderBrowserPane[T item](title string, items []indexed[T], selected, width, rows int, active bool, filter string, loading bool, loadErr error, selectedModes map[string]string, watched map[string]bool) string {
 	contentWidth := max(1, width-2)
-	lines := []string{headerStyle.Render(ansi.Truncate(title, contentWidth, "..."))}
+	lines := []string{headerStyle.Render(ansi.Truncate(title, contentWidth, "…"))}
 	if loading {
 		lines = append(lines, "Loading...")
 	} else if loadErr != nil {
-		lines = append(lines, ansi.Truncate("Error: "+loadErr.Error(), contentWidth, "..."), "Press Enter to retry")
+		lines = append(lines, ansi.Truncate("Error: "+loadErr.Error(), contentWidth, "…"), "Press Enter to retry")
 	} else if len(items) == 0 {
 		message := "No items"
 		if filter != "" {
@@ -317,14 +317,14 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 			available := max(1, contentWidth-2)
 			unavailable, isUnavailable := any(items[i].item).(unavailableItem)
 			if context != "" {
-				context = ansi.Truncate(context, max(1, available/2), "...")
-				label = ansi.Truncate(label, max(1, available-lipgloss.Width(context)-1), "...")
+				context = ansi.Truncate(context, max(1, available/2), "…")
+				label = ansi.Truncate(label, max(1, available-lipgloss.Width(context)-1), "…")
 				if isUnavailable && unavailable.Unavailable() {
 					label = unavailableStyle.Render(label)
 				}
 				label += strings.Repeat(" ", max(1, available-lipgloss.Width(label)-lipgloss.Width(context))) + hintStyle.Render(context)
 			} else {
-				label = ansi.Truncate(label, available, "...")
+				label = ansi.Truncate(label, available, "…")
 				if isUnavailable && unavailable.Unavailable() {
 					label = unavailableStyle.Render(label)
 				}
