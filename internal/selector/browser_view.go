@@ -19,37 +19,10 @@ func (m browserModel[T]) View() string {
 	}
 	rows := browserRows(height)
 	current := m.levels[len(m.levels)-1]
-	panes := make([]visiblePane[T], 0, len(m.levels)+1)
-	for i, level := range m.levels {
-		title := level.title
-		if i == 0 && len(m.options.ParentGroups) > 0 {
-			title = groupTabs(m.options.ParentGroups, m.groupIndex)
-		}
-		panes = append(panes, visiblePane[T]{title: title, kind: paneKind(level), items: m.filteredLevel(i), index: level.index, filter: level.filter, active: !m.focusRight && i == len(m.levels)-1})
-	}
-	rightTitle := m.right.title
-	if m.rightHasStreams() {
-		qualityLabel := "All qualities"
-		if m.quality > 0 {
-			qualityLabel = fmt.Sprintf("%dp", m.quality)
-		}
-		if m.rightCacheApplicable() {
-			cacheLabel := "Cached"
-			if !m.cachedOnly {
-				cacheLabel = "All"
-			}
-			rightTitle = fmt.Sprintf("Streams  [%s]  [%s]", cacheLabel, qualityLabel)
-		} else {
-			rightTitle = fmt.Sprintf("Streams  [%s]", qualityLabel)
-		}
-	}
-	if rightTitle != "" || len(m.right.items) > 0 || m.loading && !m.searching || m.err != nil {
-		panes = append(panes, visiblePane[T]{title: rightTitle, kind: paneKind(m.right), items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading && !m.searching, err: m.err})
-	}
-	visible, widths := paneLayout(width, panes)
+	visible, widths := paneLayout(width, m.browserPanes())
 	rendered := make([]string, len(visible))
 	for i, pane := range visible {
-		rendered[i] = renderBrowserPane(pane.title, pane.items, pane.index, widths[i], rows, pane.active, pane.filter, pane.loading, pane.err, m.mode, m.options.Watched)
+		rendered[i] = renderBrowserPane(pane, widths[i], rows, m.mode, m.options.Watched)
 	}
 	breadcrumb := m.breadcrumb()
 	helpText := renderHelpLine(m.help, width, m.shortHelp(browserKeys()), helpLineOptions{Right: m.options.Version, RightColumn: true})
@@ -111,6 +84,39 @@ func (m browserModel[T]) View() string {
 	return "\x1b]0;" + plainLabel(breadcrumb) + "\x07" + view
 }
 
+func (m browserModel[T]) browserPanes() []visiblePane[T] {
+	panes := make([]visiblePane[T], 0, len(m.levels)+1)
+	for i, level := range m.levels {
+		title := level.title
+		if i == 0 && len(m.options.ParentGroups) > 0 {
+			title = groupTabs(m.options.ParentGroups, m.groupIndex)
+		}
+		kind := paneKind(level)
+		panes = append(panes, visiblePane[T]{title: title, kind: kind, info: m.info[kind], items: m.filteredLevel(i), index: level.index, filter: level.filter, active: !m.focusRight && i == len(m.levels)-1})
+	}
+	rightTitle := m.right.title
+	if m.rightHasStreams() {
+		qualityLabel := "All qualities"
+		if m.quality > 0 {
+			qualityLabel = fmt.Sprintf("%dp", m.quality)
+		}
+		if m.rightCacheApplicable() {
+			cacheLabel := "Cached"
+			if !m.cachedOnly {
+				cacheLabel = "All"
+			}
+			rightTitle = fmt.Sprintf("Streams  [%s]  [%s]", cacheLabel, qualityLabel)
+		} else {
+			rightTitle = fmt.Sprintf("Streams  [%s]", qualityLabel)
+		}
+	}
+	if rightTitle != "" || len(m.right.items) > 0 || m.loading && !m.searching || m.err != nil {
+		kind := paneKind(m.right)
+		panes = append(panes, visiblePane[T]{title: rightTitle, kind: kind, info: m.info[kind], items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading && !m.searching, err: m.err})
+	}
+	return panes
+}
+
 func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []int) {
 	if len(panes) == 0 {
 		return nil, nil
@@ -143,6 +149,9 @@ func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []
 		switch kind {
 		case "season", "seasons":
 			minimums[i], weights[i] = 18, 0
+			if pane.info.open {
+				minimums[i] = 26
+			}
 		case "stream", "streams", "torrents":
 			minimums[i], weights[i] = 40, 4
 		default:
@@ -312,7 +321,11 @@ func groupTabs(groups []string, active int) string {
 	return strings.Join(labels, "    ")
 }
 
-func renderBrowserPane[T item](title string, items []indexed[T], selected, width, rows int, active bool, filter string, loading bool, loadErr error, selectedModes map[string]string, watched map[string]bool) string {
+func renderBrowserPane[T item](pane visiblePane[T], width, rows int, selectedModes map[string]string, watched map[string]bool) string {
+	title, items, selected := pane.title, pane.items, pane.index
+	active, filter, loading, loadErr := pane.active, pane.filter, pane.loading, pane.err
+	infoRows := paneInfoRows(rows, pane.info.open)
+	listRows := rows - infoRows
 	contentWidth := max(1, width)
 	lines := make([]string, 0, rows)
 	if loading {
@@ -327,8 +340,8 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 		lines = append(lines, message)
 	} else {
 		selected = clamp(selected, len(items))
-		start := max(0, min(selected-rows/2, len(items)-rows))
-		end := min(len(items), start+rows)
+		start := max(0, min(selected-listRows/2, len(items)-listRows))
+		end := min(len(items), start+listRows)
 		for i := start; i < end; i++ {
 			label := plainLabel(items[i].item.Label())
 			prefix := ""
@@ -376,7 +389,7 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 				minimumLabel += 2 // A separator and at least an ellipsis.
 			}
 			contextWidth := min(available/2, available-minimumLabel-1)
-			if contextWidth < 3 {
+			if contextWidth < 3 || prefix != "" && label == "" && lipgloss.Width(context) > contextWidth {
 				context = ""
 			} else {
 				context = ansi.Truncate(context, contextWidth, "…")
@@ -408,10 +421,26 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 			lines = append(lines, row)
 		}
 	}
-	for len(lines) < rows {
+	for len(lines) < listRows {
 		lines = append(lines, "")
 	}
-	lines = lines[:rows]
+	lines = lines[:listRows]
+	infoTitle := "Info"
+	if infoRows > 0 {
+		details, content := paneInfoLines(pane, width, watched)
+		offset := infoOffset(pane.info, content, len(details), infoRows-1)
+		if len(details) > infoRows-1 {
+			infoTitle += " · alt+j/k"
+		}
+		lines = append(lines, "") // Replaced with the info divider after framing.
+		for i := range infoRows - 1 {
+			line := ""
+			if offset+i < len(details) {
+				line = " " + details[offset+i]
+			}
+			lines = append(lines, line)
+		}
+	}
 	style := inactiveBorder
 	if active {
 		style = activeBorder
@@ -421,6 +450,9 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 	}
 	frame := strings.Split(style.Width(width).Height(rows).Render(strings.Join(lines, "\n")), "\n")
 	frame[0] = paneRule(title, width, "╭", "╮", active)
+	if infoRows > 0 {
+		frame[listRows+1] = paneRule(infoTitle, width, "├", "┤", active)
+	}
 	return strings.Join(frame, "\n")
 }
 

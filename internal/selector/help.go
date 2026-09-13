@@ -13,6 +13,7 @@ type browserKeyMap struct {
 	Keys           key.Binding
 	Groups         key.Binding
 	Mode           key.Binding
+	Info           key.Binding
 	Sort           key.Binding
 	Navigate       key.Binding
 	Home           key.Binding
@@ -36,6 +37,7 @@ func browserKeys() browserKeyMap {
 		Keys:           key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Groups:         key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "movie/series")),
 		Mode:           key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mode")),
+		Info:           key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "info")),
 		Sort:           key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort")),
 		Navigate:       key.NewBinding(key.WithKeys("h", "j", "k", "l"), key.WithHelp("hjkl", "move")),
 		Home:           key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "home")),
@@ -101,7 +103,7 @@ func renderHelpLine(model help.Model, width int, bindings []key.Binding, options
 
 func (m browserModel[T]) shortHelp(k browserKeyMap) []key.Binding {
 	rightStreams := m.focusRight && m.rightHasStreams()
-	bindings := []key.Binding{k.Navigate, k.Keys}
+	bindings := []key.Binding{k.Navigate, k.Keys, k.Info}
 	if m.playback.busy() {
 		bindings = append(bindings, k.Stop)
 	}

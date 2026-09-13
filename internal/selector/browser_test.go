@@ -15,6 +15,7 @@ import (
 type testChoice struct {
 	label        string
 	prefix       string
+	infoLines    []string
 	group        string
 	terminal     bool
 	cached       bool
@@ -39,10 +40,11 @@ func (c testChoice) WatchIdentity() (string, []string) { return c.watchID, c.wat
 func (c testChoice) WatchThrough() bool                { return c.watchThrough }
 func (c testChoice) Status(map[string]bool) string     { return c.status }
 
-func (c testChoice) Label() string              { return c.label }
-func (c testChoice) RowLabel() (string, string) { return c.prefix, c.label }
-func (c testChoice) Group() string              { return c.group }
-func (c testChoice) Terminal() bool             { return c.terminal }
+func (c testChoice) Label() string                      { return c.label }
+func (c testChoice) RowLabel() (string, string)         { return c.prefix, c.label }
+func (c testChoice) InfoLines(map[string]bool) []string { return c.infoLines }
+func (c testChoice) Group() string                      { return c.group }
+func (c testChoice) Terminal() bool                     { return c.terminal }
 func (c testChoice) StreamInfo() (StreamInfo, bool) {
 	return StreamInfo{Cached: c.cached, CacheApplicable: c.terminal && !c.direct, Playable: c.cached || c.playable, Quality: c.quality}, c.terminal
 }

@@ -55,7 +55,7 @@ func TestEpisodeNumberSurvivesLongTitleAndContext(t *testing.T) {
 	for _, number := range []int{6, 10, 11, 12, 100} {
 		prefix := fmt.Sprintf("Episode %d", number)
 		items := []indexed[testChoice]{{item: testChoice{prefix: prefix, label: strings.Repeat("Long title ", 10), modes: []ContextMode{{Key: "a", Value: "2024-09-24"}}}}}
-		view := ansi.Strip(renderBrowserPane("Episodes", items, 0, 26, 6, true, "", false, nil, nil, nil))
+		view := ansi.Strip(renderBrowserPane(visiblePane[testChoice]{title: "Episodes", items: items, active: true}, 26, 6, nil, nil))
 		row := strings.Split(view, "\n")[1]
 		if !strings.Contains(row, prefix+" ") || !strings.Contains(row, "…") || lipgloss.Width(row) != 28 {
 			t.Fatalf("episode identifier lost or row overflowed: %q", row)

@@ -124,6 +124,15 @@ three navigation panes; medium terminals show two, and narrow terminals show
 the active pane. Seasons stay compact, streams get more room, and the focused
 pane receives extra space. Pane titles and selection counts sit in the borders.
 Older ancestors slide off the left while breadcrumbs retain their context.
+Press `i` to toggle selected-item info at the bottom of the focused pane.
+Movies and series show basic metadata and summaries; seasons show episode and
+watched counts and release dates; episodes show titles, dates, ratings, and
+watched state; streams show release titles, quality, size, seeders, availability,
+source, and filename when available. Each pane type remembers its toggle for
+the session. Info follows selection, uses about one-third of the pane height,
+and wraps long text; `Alt-j`/`Alt-k` scroll overflowing details. Seasons widen
+slightly while info is open. The footer shows contextual shortcuts; `?` opens
+the full searchable key list.
 `Tab` switches movie/series results. Enter loads or selects, `h`/`l`
 changes focus, `j`/`k` moves, and `/` filters the active pane by name or quality.
 `Ctrl-D` and `Ctrl-U` move half a page. Breadcrumbs begin with the active

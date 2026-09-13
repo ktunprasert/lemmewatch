@@ -96,6 +96,7 @@ type pane[T item] struct {
 type visiblePane[T item] struct {
 	title   string
 	kind    string
+	info    paneInfoState
 	items   []indexed[T]
 	index   int
 	filter  string
@@ -205,6 +206,7 @@ type browserModel[T item] struct {
 	query               string
 	activeQuery         string
 	mode                map[string]string
+	info                map[string]paneInfoState
 	sortMode            sortMode
 	streamSort          sortMode
 	helpFilter          string
@@ -426,6 +428,12 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			if len(m.contextModes()) > 0 {
 				m.openOverlay(overlayMode)
 			}
+		case "i":
+			m.toggleInfo()
+		case "alt+j":
+			m.scrollInfo(1)
+		case "alt+k":
+			m.scrollInfo(-1)
 		case "/":
 			m.openOverlay(overlayFilter)
 		case "?":
@@ -923,7 +931,10 @@ func (m browserModel[T]) canWatchThrough() bool {
 }
 
 func (m *browserModel[T]) current() *pane[T] { return &m.levels[len(m.levels)-1] }
-func (m browserModel[T]) pageSize() int      { return browserRows(m.height) }
+func (m browserModel[T]) pageSize() int {
+	rows := browserRows(m.height)
+	return rows - paneInfoRows(rows, m.info[m.activeInfoKey()].open)
+}
 
 func (m browserModel[T]) filteredCurrent() []indexed[T] {
 	current := m.levels[len(m.levels)-1]

@@ -379,12 +379,19 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "/", label: "Filter active pane", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}},
 		{keys: "s", label: "Sort active results", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}},
 		{keys: "m", label: "Choose detail mode", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}},
+		{keys: "i", label: "Toggle active pane info", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}}},
 		{keys: "x", label: "Stop playback", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}},
 		{keys: "c", label: "Toggle cached or all", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}},
 		{keys: "v", label: "Cycle video quality", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}},
 		{keys: "?", label: "Show keybindings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
 		{keys: ";", label: "Settings", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{';'}}},
 		{keys: "q", label: "Quit", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
+	}
+	if m.info[m.activeInfoKey()].open {
+		bindings = append(bindings,
+			helpBinding{keys: "Alt-j", label: "Scroll info down", key: tea.KeyMsg{Type: tea.KeyRunes, Alt: true, Runes: []rune{'j'}}},
+			helpBinding{keys: "Alt-k", label: "Scroll info up", key: tea.KeyMsg{Type: tea.KeyRunes, Alt: true, Runes: []rune{'k'}}},
+		)
 	}
 	if len(m.options.ParentGroups) > 1 {
 		bindings = append(bindings, helpBinding{keys: "Tab", label: "Toggle movie or series", key: tea.KeyMsg{Type: tea.KeyTab}})
