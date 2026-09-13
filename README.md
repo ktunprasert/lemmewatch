@@ -120,8 +120,9 @@ requiring custom request headers are currently unavailable; player-specific
 header forwarding remains future work.
 
 Interactive watch uses adaptive navigation panes. Wide terminals show up to
-three latest navigation panes at a `1:1:2`
-weight; medium terminals use `1:2`, and narrow terminals show the active pane.
+three navigation panes; medium terminals show two, and narrow terminals show
+the active pane. Seasons stay compact, streams get more room, and the focused
+pane receives extra space. Pane titles and selection counts sit in the borders.
 Older ancestors slide off the left while breadcrumbs retain their context.
 `Tab` switches movie/series results. Enter loads or selects, `h`/`l`
 changes focus, `j`/`k` moves, and `/` filters the active pane by name or quality.

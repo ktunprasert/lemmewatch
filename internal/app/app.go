@@ -126,6 +126,18 @@ func (n navigationChoice) Label() string {
 	}
 }
 
+// RowLabel keeps the navigation identifier intact when the title is truncated.
+func (n navigationChoice) RowLabel() (prefix, title string) {
+	switch n.kind {
+	case navigationSeason:
+		return n.Label(), ""
+	case navigationEpisode:
+		return fmt.Sprintf("Episode %d", n.episode.Episode), n.episode.Title
+	default:
+		return "", n.Label()
+	}
+}
+
 func (n navigationChoice) ContextModes() []selector.ContextMode {
 	switch n.kind {
 	case navigationMedia:

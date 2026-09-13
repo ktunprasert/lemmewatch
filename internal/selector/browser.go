@@ -95,6 +95,7 @@ type pane[T item] struct {
 
 type visiblePane[T item] struct {
 	title   string
+	kind    string
 	items   []indexed[T]
 	index   int
 	filter  string
@@ -155,6 +156,9 @@ type ContextMode struct {
 
 type contextualItem interface {
 	ContextModes() []ContextMode
+}
+type rowLabelItem interface {
+	RowLabel() (prefix, title string)
 }
 type unavailableItem interface{ Unavailable() bool }
 type cacheableItem interface{ CacheKey() string }
@@ -919,7 +923,7 @@ func (m browserModel[T]) canWatchThrough() bool {
 }
 
 func (m *browserModel[T]) current() *pane[T] { return &m.levels[len(m.levels)-1] }
-func (m browserModel[T]) pageSize() int      { return max(1, m.height-6) }
+func (m browserModel[T]) pageSize() int      { return browserRows(m.height) }
 
 func (m browserModel[T]) filteredCurrent() []indexed[T] {
 	current := m.levels[len(m.levels)-1]

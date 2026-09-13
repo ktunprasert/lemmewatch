@@ -14,6 +14,7 @@ import (
 
 type testChoice struct {
 	label        string
+	prefix       string
 	group        string
 	terminal     bool
 	cached       bool
@@ -38,9 +39,10 @@ func (c testChoice) WatchIdentity() (string, []string) { return c.watchID, c.wat
 func (c testChoice) WatchThrough() bool                { return c.watchThrough }
 func (c testChoice) Status(map[string]bool) string     { return c.status }
 
-func (c testChoice) Label() string  { return c.label }
-func (c testChoice) Group() string  { return c.group }
-func (c testChoice) Terminal() bool { return c.terminal }
+func (c testChoice) Label() string              { return c.label }
+func (c testChoice) RowLabel() (string, string) { return c.prefix, c.label }
+func (c testChoice) Group() string              { return c.group }
+func (c testChoice) Terminal() bool             { return c.terminal }
 func (c testChoice) StreamInfo() (StreamInfo, bool) {
 	return StreamInfo{Cached: c.cached, CacheApplicable: c.terminal && !c.direct, Playable: c.cached || c.playable, Quality: c.quality}, c.terminal
 }
@@ -773,14 +775,17 @@ func TestToastRendersAndExpiresByGeneration(t *testing.T) {
 }
 
 func TestToastOverlaysBottomRight(t *testing.T) {
-	base := "top\nsecond line\nthird line\nfourth line\nbottom\n"
+	base := "top\nsecond line\nthird line\nfourth line\nfifth line\ngap\nborder\nfooter\n"
 	view := ansi.Strip(overlayToast(base, toastBorder.Render("network error"), 50))
 	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
-	if !strings.Contains(strings.Join(lines[len(lines)-4:], "\n"), "network error") {
+	if !strings.Contains(strings.Join(lines[len(lines)-6:len(lines)-3], "\n"), "network error") {
 		t.Fatalf("toast not near bottom: %q", view)
 	}
 	if !strings.HasPrefix(lines[0], "top") {
 		t.Fatalf("toast damaged base: %q", view)
+	}
+	if strings.Join(lines[len(lines)-3:], "\n") != "gap\nborder\nfooter" {
+		t.Fatalf("toast overlapped bottom border or footer: %q", view)
 	}
 }
 

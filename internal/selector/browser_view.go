@@ -17,7 +17,7 @@ func (m browserModel[T]) View() string {
 	if height <= 0 {
 		height = 24
 	}
-	rows := max(1, height-6)
+	rows := browserRows(height)
 	current := m.levels[len(m.levels)-1]
 	panes := make([]visiblePane[T], 0, len(m.levels)+1)
 	for i, level := range m.levels {
@@ -25,7 +25,7 @@ func (m browserModel[T]) View() string {
 		if i == 0 && len(m.options.ParentGroups) > 0 {
 			title = groupTabs(m.options.ParentGroups, m.groupIndex)
 		}
-		panes = append(panes, visiblePane[T]{title: title, items: m.filteredLevel(i), index: level.index, filter: level.filter, active: !m.focusRight && i == len(m.levels)-1})
+		panes = append(panes, visiblePane[T]{title: title, kind: paneKind(level), items: m.filteredLevel(i), index: level.index, filter: level.filter, active: !m.focusRight && i == len(m.levels)-1})
 	}
 	rightTitle := m.right.title
 	if m.rightHasStreams() {
@@ -44,7 +44,7 @@ func (m browserModel[T]) View() string {
 		}
 	}
 	if rightTitle != "" || len(m.right.items) > 0 || m.loading && !m.searching || m.err != nil {
-		panes = append(panes, visiblePane[T]{title: rightTitle, items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading && !m.searching, err: m.err})
+		panes = append(panes, visiblePane[T]{title: rightTitle, kind: paneKind(m.right), items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading && !m.searching, err: m.err})
 	}
 	visible, widths := paneLayout(width, panes)
 	rendered := make([]string, len(visible))
@@ -121,25 +121,50 @@ func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []
 	} else if width < 88 {
 		count = min(2, count)
 	}
-	if count == 1 {
-		active := len(panes) - 1
-		for i := range panes {
-			if panes[i].active {
-				active = i
-				break
-			}
+	active := len(panes) - 1
+	for i := range panes {
+		if panes[i].active {
+			active = i
+			break
 		}
+	}
+	if count == 1 {
 		return panes[active : active+1], []int{max(18, width-2)}
 	}
-	visible := panes[len(panes)-count:]
-	minimums := []int{24, 40}
-	weights := []int{1, 2}
-	if count == 3 {
-		minimums = []int{24, 24, 40}
-		weights = []int{1, 1, 2}
+	start := min(active, len(panes)-count)
+	visible := panes[start : start+count]
+	minimums := make([]int, count)
+	weights := make([]int, count)
+	for i, pane := range visible {
+		kind := pane.kind
+		if kind == "" {
+			kind = strings.ToLower(pane.title)
+		}
+		switch kind {
+		case "season", "seasons":
+			minimums[i], weights[i] = 18, 0
+		case "stream", "streams", "torrents":
+			minimums[i], weights[i] = 40, 4
+		default:
+			minimums[i], weights[i] = 28, 2
+		}
+		if pane.active && weights[i] > 0 {
+			weights[i]++
+		}
+	}
+	// Unknown pane combinations must also fit at the responsive breakpoints.
+	for sum(minimums) > width {
+		for i := range minimums {
+			if sum(minimums) > width && minimums[i] > 18 {
+				minimums[i]--
+			}
+		}
 	}
 	extra := max(0, width-sum(minimums))
 	weightTotal := sum(weights)
+	if weightTotal == 0 {
+		weights[count-1], weightTotal = 1, 1
+	}
 	widths := make([]int, count)
 	used := 0
 	for i := range count {
@@ -149,6 +174,33 @@ func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []
 	}
 	widths[count-1] += extra - used
 	return visible, widths
+}
+
+func browserRows(height int) int {
+	if height <= 0 {
+		height = 24
+	}
+	return max(1, height-4)
+}
+
+func paneKind[T item](p pane[T]) string {
+	if len(p.items) > 0 {
+		if contextual, ok := any(p.items[0]).(contextualItem); ok {
+			if modes := contextual.ContextModes(); len(modes) > 0 && modes[0].Group != "" {
+				return modes[0].Group
+			}
+		}
+	}
+	switch p.title {
+	case "Seasons":
+		return "season"
+	case "Episodes":
+		return "episode"
+	case "Streams":
+		return "stream"
+	default:
+		return "media"
+	}
 }
 
 func sum(values []int) int {
@@ -219,7 +271,7 @@ func overlayToast(base, styled string, width int) string {
 	baseLines := strings.Split(strings.TrimSuffix(base, "\n"), "\n")
 	toastLines := strings.Split(styled, "\n")
 	x := max(0, width-lipgloss.Width(styled)-1)
-	y := max(0, len(baseLines)-len(toastLines)-1)
+	y := max(0, len(baseLines)-len(toastLines)-3)
 	return overlayAt(baseLines, toastLines, width, x, y)
 }
 
@@ -261,8 +313,8 @@ func groupTabs(groups []string, active int) string {
 }
 
 func renderBrowserPane[T item](title string, items []indexed[T], selected, width, rows int, active bool, filter string, loading bool, loadErr error, selectedModes map[string]string, watched map[string]bool) string {
-	contentWidth := max(1, width-2)
-	lines := []string{headerStyle.Render(ansi.Truncate(title, contentWidth, "…"))}
+	contentWidth := max(1, width)
+	lines := make([]string, 0, rows)
 	if loading {
 		lines = append(lines, "Loading...")
 	} else if loadErr != nil {
@@ -279,6 +331,11 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 		end := min(len(items), start+rows)
 		for i := start; i < end; i++ {
 			label := plainLabel(items[i].item.Label())
+			prefix := ""
+			if split, ok := any(items[i].item).(rowLabelItem); ok {
+				prefix, label = split.RowLabel()
+				prefix, label = plainLabel(prefix), plainLabel(label)
+			}
 			indicator := "  "
 			if isWatched(items[i].item, watched) {
 				indicator = "✓ "
@@ -288,7 +345,6 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 					indicator = value + " "
 				}
 			}
-			label = indicator + label
 			context := ""
 			if contextual, ok := any(items[i].item).(contextualItem); ok {
 				modes := contextual.ContextModes()
@@ -315,19 +371,31 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 				}
 			}
 			available := max(1, contentWidth-2)
-			unavailable, isUnavailable := any(items[i].item).(unavailableItem)
-			if context != "" {
-				context = ansi.Truncate(context, max(1, available/2), "…")
-				label = ansi.Truncate(label, max(1, available-lipgloss.Width(context)-1), "…")
-				if isUnavailable && unavailable.Unavailable() {
-					label = unavailableStyle.Render(label)
-				}
-				label += strings.Repeat(" ", max(1, available-lipgloss.Width(label)-lipgloss.Width(context))) + hintStyle.Render(context)
+			minimumLabel := lipgloss.Width(indicator + prefix)
+			if label != "" {
+				minimumLabel += 2 // A separator and at least an ellipsis.
+			}
+			contextWidth := min(available/2, available-minimumLabel-1)
+			if contextWidth < 3 {
+				context = ""
 			} else {
-				label = ansi.Truncate(label, available, "…")
-				if isUnavailable && unavailable.Unavailable() {
-					label = unavailableStyle.Render(label)
-				}
+				context = ansi.Truncate(context, contextWidth, "…")
+			}
+			labelWidth := available
+			if context != "" {
+				labelWidth -= lipgloss.Width(context) + 1
+			}
+			if prefix != "" && label != "" {
+				prefix += " "
+			}
+			label = indicator + prefix + ansi.Truncate(label, max(0, labelWidth-lipgloss.Width(indicator+prefix)), "…")
+			label = ansi.Truncate(label, labelWidth, "…")
+			unavailable, isUnavailable := any(items[i].item).(unavailableItem)
+			if isUnavailable && unavailable.Unavailable() {
+				label = unavailableStyle.Render(label)
+			}
+			if context != "" {
+				label += strings.Repeat(" ", max(1, available-lipgloss.Width(label)-lipgloss.Width(context))) + hintStyle.Render(context)
 			}
 			row := "  " + label
 			if i == selected {
@@ -339,14 +407,31 @@ func renderBrowserPane[T item](title string, items []indexed[T], selected, width
 			}
 			lines = append(lines, row)
 		}
-		lines[0] += hintStyle.Render(fmt.Sprintf("  %d-%d/%d", start+1, end, len(items)))
 	}
-	for len(lines) < rows+1 {
+	for len(lines) < rows {
 		lines = append(lines, "")
 	}
+	lines = lines[:rows]
 	style := inactiveBorder
 	if active {
 		style = activeBorder
 	}
-	return style.Width(width).Height(rows + 1).Render(strings.Join(lines, "\n"))
+	if len(items) > 0 && !loading && loadErr == nil {
+		title += fmt.Sprintf(" · %d/%d", clamp(selected, len(items))+1, len(items))
+	}
+	frame := strings.Split(style.Width(width).Height(rows).Render(strings.Join(lines, "\n")), "\n")
+	frame[0] = paneRule(title, width, "╭", "╮", active)
+	return strings.Join(frame, "\n")
+}
+
+func paneRule(title string, width int, left, right string, active bool) string {
+	border := inactiveBorder
+	labelStyle := hintStyle
+	if active {
+		border = activeBorder
+		labelStyle = headerStyle
+	}
+	ruleStyle := lipgloss.NewStyle().Foreground(border.GetBorderTopForeground())
+	label := ansi.Truncate(" "+plainLabel(title)+" ", max(0, width-1), "…")
+	return ruleStyle.Render(left+"─") + labelStyle.Render(label) + ruleStyle.Render(strings.Repeat("─", max(0, width-1-lipgloss.Width(label)))+right)
 }
