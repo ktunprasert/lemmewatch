@@ -38,16 +38,50 @@ func TestBrowserBorderTitlesAndViewportBounds(t *testing.T) {
 	}
 }
 
-func TestPaneLayoutKeepsFocusVisibleAndSeasonsNarrow(t *testing.T) {
+func TestPaneLayoutKeepsFocusVisibleAndWidthsProportional(t *testing.T) {
 	panes := []visiblePane[testChoice]{{title: "Media"}, {title: "Seasons"}, {title: "Episodes"}, {title: "Streams", active: true}}
 	_, widths := paneLayout(120, panes)
-	if widths[0]+2 != 18 || widths[2] <= widths[1] {
+	if widths[0] >= widths[1] || widths[2] <= widths[1] {
 		t.Fatalf("seasons not compact or streams not wide: %v", widths)
 	}
 	panes[3].active, panes[0].active = false, true
 	visible, widths := paneLayout(120, panes)
 	if !visible[0].active || paneTitles(visible) != "Media,Seasons,Episodes" || paneWidth(widths) != 120 {
 		t.Fatalf("focus fell outside viewport: %v %v", visible, widths)
+	}
+}
+
+func TestSeasonsScaleWithTerminalWidthAndFocus(t *testing.T) {
+	for _, count := range []int{2, 3} {
+		panes := []visiblePane[testChoice]{{title: "History"}, {title: "Seasons", active: count == 2}}
+		if count == 3 {
+			panes = append(panes, visiblePane[testChoice]{title: "Episodes", active: true})
+		}
+		previous := 0
+		for _, width := range []int{88, 136, 200} {
+			_, widths := paneLayout(width, panes)
+			seasonWidth := widths[1] + 2
+			if paneWidth(widths) != width || seasonWidth <= previous || seasonWidth < width/5 {
+				t.Fatalf("%d panes at %d columns: disproportionate widths %v", count, width, widths)
+			}
+			previous = seasonWidth
+			panes[1].info.open = true
+			_, withInfo := paneLayout(width, panes)
+			if withInfo[1] != widths[1] {
+				t.Fatalf("info toggle changed pane width: %v -> %v", widths, withInfo)
+			}
+			panes[1].info.open = false
+		}
+		panes[0].active, panes[1].active = true, false
+		if count == 3 {
+			panes[2].active = false
+		}
+		_, inactive := paneLayout(136, panes)
+		panes[0].active, panes[1].active = false, true
+		_, focused := paneLayout(136, panes)
+		if focused[1] <= inactive[1] {
+			t.Fatalf("focused Seasons did not receive extra space: %v -> %v", inactive, focused)
+		}
 	}
 }
 

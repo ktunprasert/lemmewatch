@@ -148,16 +148,13 @@ func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []
 		}
 		switch kind {
 		case "season", "seasons":
-			minimums[i], weights[i] = 18, 0
-			if pane.info.open {
-				minimums[i] = 26
-			}
+			minimums[i], weights[i] = 26, 1
 		case "stream", "streams", "torrents":
 			minimums[i], weights[i] = 40, 4
 		default:
 			minimums[i], weights[i] = 28, 2
 		}
-		if pane.active && weights[i] > 0 {
+		if pane.active {
 			weights[i]++
 		}
 	}
@@ -171,9 +168,6 @@ func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []
 	}
 	extra := max(0, width-sum(minimums))
 	weightTotal := sum(weights)
-	if weightTotal == 0 {
-		weights[count-1], weightTotal = 1, 1
-	}
 	widths := make([]int, count)
 	used := 0
 	for i := range count {
