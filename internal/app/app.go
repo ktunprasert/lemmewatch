@@ -558,19 +558,20 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 	_, err = selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
 		return load(ctx, selected, false)
 	}, selector.BrowserOptions[navigationChoice]{
-		InitialTitle:      initialTitle,
-		InitialQuery:      initialQuery,
-		InitialSearch:     initialSearch,
-		Version:           a.Version,
-		ParentGroups:      parentGroups,
-		SearchGroups:      []string{string(model.Movie), string(model.Series)},
-		PreferredGroup:    preferences.MediaTab,
-		PreferredQuality:  preferences.Quality,
-		PreferredCached:   preferences.CachedOnly,
-		PreferredProvider: providerID,
-		PreferredPlayer:   preferences.Player,
-		Providers:         a.ProviderNames,
-		PreferredModes:    preferences.DetailModes,
+		InitialTitle:       initialTitle,
+		InitialQuery:       initialQuery,
+		InitialSearch:      initialSearch,
+		Version:            a.Version,
+		ParentGroups:       parentGroups,
+		SearchGroups:       []string{string(model.Movie), string(model.Series)},
+		PreferredGroup:     preferences.MediaTab,
+		PreferredQuality:   preferences.Quality,
+		PreferredCached:    preferences.CachedOnly,
+		PreferredProvider:  providerID,
+		PreferredPlayer:    preferences.Player,
+		Providers:          a.ProviderNames,
+		PreferredModes:     preferences.DetailModes,
+		PreferredPaneSizes: preferences.PaneSizes,
 		ModeOptions: map[string][]selector.ContextMode{
 			"media":   {{Key: "y", Name: "Year"}, {Key: "r", Name: "Rating"}, {Key: "i", Name: "ID"}, {Key: "t", Name: "Type"}},
 			"season":  {{Key: "e", Name: "Episodes"}},
@@ -651,6 +652,13 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 				preferences.DetailModes = make(map[string]string)
 			}
 			preferences.DetailModes[group] = mode
+			return config.Save(preferences)
+		},
+		SavePaneSizes: func(count int, sizes []int) error {
+			if preferences.PaneSizes == nil {
+				preferences.PaneSizes = make(map[int][]int)
+			}
+			preferences.PaneSizes[count] = sizes
 			return config.Save(preferences)
 		},
 		Progress: func() <-chan string {

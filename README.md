@@ -125,6 +125,12 @@ the active pane. Two panes split the width equally. Three panes use a
 20/40/40 split: a collapsed left parent and two equal main panes. These ratios
 stay fixed regardless of content, focus, or info visibility. Pane titles and
 selection counts sit in the borders.
+To customize the split, open Settings (`;`), select **Two-pane sizes** or
+**Three-pane sizes**, and press Enter. Enter left-to-right relative sizes such
+as `1:1` or `1:2:3` (each value 1–1000). Changes apply immediately and persist
+in `preferences.json` under `"pane_sizes": {"2": [50, 50], "3": [20, 40, 40]}`.
+Missing or invalid ratios use the defaults. Small panes retain an 18-column
+minimum, so extreme ratios are adjusted to fit the terminal.
 Older ancestors slide off the left while breadcrumbs retain their context.
 Press `i` to toggle selected-item info at the bottom of the focused pane.
 Movies and series show basic metadata and summaries; seasons show episode and

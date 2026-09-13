@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ type BrowserOptions[T item] struct {
 	PreferredPlayer      string
 	Providers            []string
 	PreferredModes       map[string]string
+	PreferredPaneSizes   map[int][]int
 	ModeOptions          map[string][]ContextMode
 	SaveGroup            func(string) error
 	SaveQuality          func(int) error
@@ -36,6 +38,7 @@ type BrowserOptions[T item] struct {
 	SaveProviderAPIKey   func(string, string) error
 	SavePlayer           func(string) error
 	SaveMode             func(string, string) error
+	SavePaneSizes        func(int, []int) error
 	ChildTitle           func(T) string
 	Refresh              func(context.Context, T) ([]T, error)
 	Play                 func(context.Context, T) error
@@ -207,6 +210,9 @@ type browserModel[T item] struct {
 	activeQuery         string
 	mode                map[string]string
 	info                map[string]paneInfoState
+	paneSizes           map[int][]int
+	paneSizeCount       int
+	paneSizeValue       string
 	sortMode            sortMode
 	streamSort          sortMode
 	helpFilter          string
@@ -1152,7 +1158,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 	if options.PreferredCached != nil {
 		cachedOnly = *options.PreferredCached
 	}
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24, help: newHelpModel()}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, paneSizes: maps.Clone(options.PreferredPaneSizes), provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24, help: newHelpModel()}
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

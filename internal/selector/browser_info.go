@@ -75,7 +75,7 @@ func (m *browserModel[T]) scrollInfo(delta int) {
 	if width <= 0 {
 		width = 100
 	}
-	panes, widths := paneLayout(width, m.browserPanes())
+	panes, widths := paneLayout(width, m.browserPanes(), m.paneSizes)
 	for i, pane := range panes {
 		rows := paneInfoRows(browserRows(m.height), pane.info.open) - 1
 		if !pane.active || rows <= 0 {

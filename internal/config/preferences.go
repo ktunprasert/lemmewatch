@@ -14,6 +14,7 @@ type Preferences struct {
 	TorBoxToken string            `json:"torbox_api_token,omitempty"`
 	Player      string            `json:"player,omitempty"`
 	DetailModes map[string]string `json:"detail_modes,omitempty"`
+	PaneSizes   map[int][]int     `json:"pane_sizes,omitempty"`
 }
 
 func Load() Preferences {

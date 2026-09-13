@@ -240,17 +240,17 @@ func TestEscapeClearsFilterBeforeNavigatingBack(t *testing.T) {
 func TestPaneLayoutUsesSlidingResponsiveWindow(t *testing.T) {
 	panes := []visiblePane[testChoice]{{title: "Media"}, {title: "Seasons"}, {title: "Episodes", active: true}, {title: "Torrents"}}
 
-	visible, widths := paneLayout(120, panes)
+	visible, widths := paneLayout(120, panes, nil)
 	if got := paneTitles(visible); got != "Seasons,Episodes,Torrents" || paneWidth(widths) != 120 {
 		t.Fatalf("three-pane layout = %q %#v", got, widths)
 	}
 
-	visible, widths = paneLayout(80, panes)
+	visible, widths = paneLayout(80, panes, nil)
 	if got := paneTitles(visible); got != "Episodes,Torrents" || paneWidth(widths) != 80 || widths[1] != widths[0] {
 		t.Fatalf("two-pane layout = %q %#v", got, widths)
 	}
 
-	visible, widths = paneLayout(60, panes)
+	visible, widths = paneLayout(60, panes, nil)
 	if got := paneTitles(visible); got != "Episodes" || paneWidth(widths) != 60 {
 		t.Fatalf("one-pane layout = %q %#v", got, widths)
 	}

@@ -19,7 +19,7 @@ func (m browserModel[T]) View() string {
 	}
 	rows := browserRows(height)
 	current := m.levels[len(m.levels)-1]
-	visible, widths := paneLayout(width, m.browserPanes())
+	visible, widths := paneLayout(width, m.browserPanes(), m.paneSizes)
 	rendered := make([]string, len(visible))
 	for i, pane := range visible {
 		rendered[i] = renderBrowserPane(pane, widths[i], rows, m.mode, m.options.Watched)
@@ -46,6 +46,12 @@ func (m browserModel[T]) View() string {
 		})
 	case overlaySettings:
 		modal = m.settingsModal()
+	case overlayPaneSizes:
+		modal = inputModal(fmt.Sprintf("%d-pane sizes", m.paneSizeCount), m.paneSizeValue, 50, []key.Binding{
+			hintBinding("enter", "save"),
+			hintBinding("esc", "cancel"),
+			hintBinding("ctrl-u", "clear"),
+		})
 	case overlaySort:
 		modal = sortModal(m.focusRight && m.rightHasStreams(), m.inHistoryRoot())
 	case overlayMode:
@@ -117,7 +123,7 @@ func (m browserModel[T]) browserPanes() []visiblePane[T] {
 	return panes
 }
 
-func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []int) {
+func paneLayout[T item](width int, panes []visiblePane[T], sizes map[int][]int) ([]visiblePane[T], []int) {
 	if len(panes) == 0 {
 		return nil, nil
 	}
@@ -139,14 +145,33 @@ func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []
 	}
 	start := min(active, len(panes)-count)
 	visible := panes[start : start+count]
-	if count == 2 {
-		left := width / 2
-		return visible, []int{left - 2, width - left - 2}
+	weights := paneSizeWeights(count, sizes)
+	total := 0
+	for _, weight := range weights {
+		total += weight
 	}
-	// Collapse only the left parent; keep both main panes equally sized.
-	left := width / 5
-	middle := (width - left) / 2
-	return visible, []int{left - 2, middle - 2, width - left - middle - 2}
+	widths := make([]int, count)
+	used := 0
+	for i, weight := range weights {
+		widths[i] = max(18, width*weight/total)
+		used += widths[i]
+	}
+	// Borrow space from the widest pane when a small ratio hits the minimum.
+	for used > width {
+		largest := 0
+		for i := range widths {
+			if widths[i] > widths[largest] {
+				largest = i
+			}
+		}
+		widths[largest]--
+		used--
+	}
+	widths[count-1] += width - used
+	for i := range widths {
+		widths[i] -= 2 // Border cells.
+	}
+	return visible, widths
 }
 
 func browserRows(height int) int {
@@ -287,7 +312,7 @@ func renderBrowserPane[T item](pane visiblePane[T], width, rows int, selectedMod
 	if loading {
 		lines = append(lines, "Loading...")
 	} else if loadErr != nil {
-		lines = append(lines, ansi.Truncate("Error: "+loadErr.Error(), contentWidth, "…"), "Press Enter to retry")
+		lines = append(lines, ansi.Truncate("Error: "+plainLabel(loadErr.Error()), contentWidth, "…"), "Press Enter to retry")
 	} else if len(items) == 0 {
 		message := "No items"
 		if filter != "" {
@@ -403,6 +428,9 @@ func renderBrowserPane[T item](pane visiblePane[T], width, rows int, selectedMod
 	}
 	if len(items) > 0 && !loading && loadErr == nil {
 		title += fmt.Sprintf(" · %d/%d", clamp(selected, len(items))+1, len(items))
+	}
+	for i := range lines {
+		lines[i] = ansi.Truncate(lines[i], contentWidth, "…")
 	}
 	frame := strings.Split(style.Width(width).Height(rows).Render(strings.Join(lines, "\n")), "\n")
 	frame[0] = paneRule(title, width, "╭", "╮", active)

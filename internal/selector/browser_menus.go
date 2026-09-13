@@ -21,6 +21,7 @@ const (
 	overlayProviderAPIKey
 	overlayQuery
 	overlayFilter
+	overlayPaneSizes
 )
 
 func (m *browserModel[T]) openOverlay(kind overlayKind) {
@@ -62,6 +63,8 @@ func (m *browserModel[T]) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateQuery(msg)
 	case overlayFilter:
 		return m.updateFilter(msg)
+	case overlayPaneSizes:
+		return m.updatePaneSizes(msg)
 	default:
 		return m, nil
 	}
@@ -145,14 +148,16 @@ func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 var settingModeGroups = []string{"media", "season", "episode", "stream"}
 
+const settingsCount = 11
+
 func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", ";":
 		m.closeAllOverlays()
 	case "up", "k":
-		m.settingsIndex = clamp(m.settingsIndex-1, 9)
+		m.settingsIndex = clamp(m.settingsIndex-1, settingsCount)
 	case "down", "j":
-		m.settingsIndex = clamp(m.settingsIndex+1, 9)
+		m.settingsIndex = clamp(m.settingsIndex+1, settingsCount)
 	case "left", "h":
 		m.changeSetting(-1)
 	case "right", "l":
@@ -234,6 +239,10 @@ func (m *browserModel[T]) changeSetting(delta int) {
 		if m.options.SavePlayer != nil {
 			m.saveSetting(m.options.SavePlayer(m.player))
 		}
+	case 9, 10:
+		m.paneSizeCount = m.settingsIndex - 7
+		m.paneSizeValue = formatPaneSizes(paneSizeWeights(m.paneSizeCount, m.paneSizes))
+		m.openOverlay(overlayPaneSizes)
 	default:
 		group := settingModeGroups[m.settingsIndex-5]
 		modes := m.options.ModeOptions[group]
@@ -686,6 +695,8 @@ func (m browserModel[T]) settingsModal() string {
 		labels = append(labels, strings.ToUpper(modeGroup[:1])+modeGroup[1:]+" detail")
 		values = append(values, value)
 	}
+	labels = append(labels, "Two-pane sizes", "Three-pane sizes")
+	values = append(values, formatPaneSizes(paneSizeWeights(2, m.paneSizes)), formatPaneSizes(paneSizeWeights(3, m.paneSizes)))
 	lines := []string{headerStyle.Render("Settings"), ""}
 	for i := range labels {
 		line := fmt.Sprintf("%-20s  < %-16s >", labels[i], values[i])

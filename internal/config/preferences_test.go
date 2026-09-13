@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -10,7 +11,7 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
 	cachedOnly := false
-	if err := Save(Preferences{Quality: 1080, MediaTab: "series", CachedOnly: &cachedOnly, Provider: "webstreamr", TorBoxToken: "secret", Player: "vlc", DetailModes: map[string]string{"media": "i"}}); err != nil {
+	if err := Save(Preferences{Quality: 1080, MediaTab: "series", CachedOnly: &cachedOnly, Provider: "webstreamr", TorBoxToken: "secret", Player: "vlc", DetailModes: map[string]string{"media": "i"}, PaneSizes: map[int][]int{2: {1, 1}, 3: {1, 2, 3}}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := Load().Quality; got != 1080 {
@@ -21,6 +22,9 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	}
 	if got := Load().DetailModes["media"]; got != "i" {
 		t.Fatalf("media detail mode = %q", got)
+	}
+	if got := Load().PaneSizes; !slices.Equal(got[2], []int{1, 1}) || !slices.Equal(got[3], []int{1, 2, 3}) {
+		t.Fatalf("pane sizes = %v", got)
 	}
 	if got := Load(); got.CachedOnly == nil || *got.CachedOnly || got.Provider != "webstreamr" || got.TorBoxToken != "secret" || got.Player != "vlc" {
 		t.Fatalf("saved defaults = %#v", got)
