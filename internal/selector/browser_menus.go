@@ -86,14 +86,14 @@ func (m browserModel[T]) updateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func modeModal(modes []ContextMode) string {
-	lines := []string{headerStyle.Render("Mode"), ""}
+	lines := make([]string, 0, len(modes)+2)
 	for _, mode := range modes {
 		lines = append(lines, fmt.Sprintf("[%s] %s", mode.Key, mode.Name))
 	}
 	lines = append(lines, "", renderHelpLine(newHelpModel(), 32, []key.Binding{
 		hintBinding("esc", "cancel"),
 	}, helpLineOptions{}))
-	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
+	return titledModal("Mode", strings.Join(lines, "\n"), activeBorder.Padding(0, 1))
 }
 
 func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -611,13 +611,12 @@ func (m browserModel[T]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func inputModal(title, value string, width int, bindings []key.Binding) string {
-	input := ansi.Truncate(value, max(1, width-2), "…") + "_"
-	return activeBorder.Width(width).Padding(0, 1).Render(strings.Join([]string{
-		headerStyle.Render(title),
+	input := ansi.Truncate(value, max(1, width-3), "…") + "_"
+	return titledModal(title, strings.Join([]string{
 		input,
 		"",
-		renderHelpLine(newHelpModel(), width, bindings, helpLineOptions{}),
-	}, "\n"))
+		renderHelpLine(newHelpModel(), width-2, bindings, helpLineOptions{}),
+	}, "\n"), activeBorder.Width(width).Padding(0, 1))
 }
 
 func activityModal(frame int, label string) string {
@@ -626,7 +625,8 @@ func activityModal(frame int, label string) string {
 
 func (m browserModel[T]) helpModal() string {
 	bindings := m.filteredHelpBindings()
-	lines := []string{headerStyle.Render("Keybindings"), "Search: " + m.helpFilter + "_", ""}
+	title := "Keybindings"
+	lines := []string{"Search: " + m.helpFilter + "_", ""}
 	if len(bindings) == 0 {
 		lines = append(lines, "No matching commands")
 	} else {
@@ -635,10 +635,10 @@ func (m browserModel[T]) helpModal() string {
 		if height <= 0 {
 			height = 24
 		}
-		visible := max(1, height-7)
+		visible := max(1, height-6)
 		start := max(0, min(selected-visible/2, len(bindings)-visible))
 		end := min(len(bindings), start+visible)
-		lines[0] += hintStyle.Render(fmt.Sprintf("  %d-%d/%d", start+1, end, len(bindings)))
+		title += fmt.Sprintf(" · %d-%d/%d", start+1, end, len(bindings))
 		for i := start; i < end; i++ {
 			binding := bindings[i]
 			line := fmt.Sprintf("%-20s %s", binding.keys, binding.label)
@@ -656,7 +656,7 @@ func (m browserModel[T]) helpModal() string {
 		hintBinding("enter", "run"),
 		hintBinding("esc", "close"),
 	}, helpLineOptions{}))
-	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
+	return titledModal(title, strings.Join(lines, "\n"), activeBorder.Padding(0, 1))
 }
 
 func (m browserModel[T]) settingsModal() string {
@@ -697,7 +697,7 @@ func (m browserModel[T]) settingsModal() string {
 	}
 	labels = append(labels, "Two-pane sizes", "Three-pane sizes")
 	values = append(values, formatPaneSizes(paneSizeWeights(2, m.paneSizes)), formatPaneSizes(paneSizeWeights(3, m.paneSizes)))
-	lines := []string{headerStyle.Render("Settings"), ""}
+	lines := make([]string, 0, len(labels)+2)
 	for i := range labels {
 		line := fmt.Sprintf("%-20s  < %-16s >", labels[i], values[i])
 		if i == m.settingsIndex {
@@ -713,5 +713,5 @@ func (m browserModel[T]) settingsModal() string {
 		hintBinding("enter", "edit"),
 		hintBinding("esc", "close"),
 	}, helpLineOptions{}))
-	return activeBorder.Padding(0, 1).Render(strings.Join(lines, "\n"))
+	return titledModal("Settings", strings.Join(lines, "\n"), activeBorder.Padding(0, 1))
 }

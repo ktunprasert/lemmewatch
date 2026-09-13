@@ -219,8 +219,8 @@ func (m browserModel[T]) breadcrumb() string {
 }
 
 func sortModal(torrents, history bool) string {
+	title := "Sort results"
 	lines := []string{
-		headerStyle.Render("Sort results"),
 		"a   Name ascending",
 		"A   Name descending",
 		"y   Year ascending",
@@ -231,8 +231,8 @@ func sortModal(torrents, history bool) string {
 		lines = append(lines[:len(lines)-1], "p   Date played ascending", "P   Date played descending", lines[len(lines)-1])
 	}
 	if torrents {
+		title = "Sort streams"
 		lines = []string{
-			headerStyle.Render("Sort streams"),
 			"q   Quality ascending",
 			"Q   Quality descending",
 			"c   Cached first",
@@ -245,7 +245,13 @@ func sortModal(torrents, history bool) string {
 	lines = append(lines, "", renderHelpLine(newHelpModel(), 32, []key.Binding{
 		hintBinding("esc", "cancel"),
 	}, helpLineOptions{}))
-	return activeBorder.Padding(0, 2).Render(strings.Join(lines, "\n"))
+	return titledModal(title, strings.Join(lines, "\n"), activeBorder.Padding(0, 2))
+}
+
+func titledModal(title, content string, style lipgloss.Style) string {
+	lines := strings.Split(style.Render(content), "\n")
+	lines[0] = paneRule(title, lipgloss.Width(lines[0])-2, "╭", "╮", true)
+	return strings.Join(lines, "\n")
 }
 
 func overlay(base, modal string, width int) string {

@@ -124,7 +124,8 @@ three navigation panes; medium terminals show two, and narrow terminals show
 the active pane. Two panes split the width equally. Three panes use a
 20/40/40 split: a collapsed left parent and two equal main panes. These ratios
 stay fixed regardless of content, focus, or info visibility. Pane titles and
-selection counts sit in the borders.
+selection counts sit in the borders. Settings, key help, search/filter,
+sort/mode menus, and input popups use border titles too.
 To customize the split, open Settings (`;`), select **Two-pane sizes** or
 **Three-pane sizes**, and press Enter. Enter left-to-right relative sizes such
 as `1:1` or `1:2:3` (each value 1–1000). Changes apply immediately and persist
