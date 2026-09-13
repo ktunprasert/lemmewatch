@@ -41,8 +41,8 @@ func TestBrowserBorderTitlesAndViewportBounds(t *testing.T) {
 func TestPaneLayoutKeepsFocusVisibleAndWidthsProportional(t *testing.T) {
 	panes := []visiblePane[testChoice]{{title: "Media"}, {title: "Seasons"}, {title: "Episodes"}, {title: "Streams", active: true}}
 	_, widths := paneLayout(120, panes)
-	if widths[0] >= widths[1] || widths[2] <= widths[1] {
-		t.Fatalf("seasons not compact or streams not wide: %v", widths)
+	if widths[0] >= widths[1] || widths[2] != widths[1] {
+		t.Fatalf("left parent not collapsed or main panes not equal: %v", widths)
 	}
 	panes[3].active, panes[0].active = false, true
 	visible, widths := paneLayout(120, panes)
@@ -51,36 +51,40 @@ func TestPaneLayoutKeepsFocusVisibleAndWidthsProportional(t *testing.T) {
 	}
 }
 
-func TestSeasonsScaleWithTerminalWidthAndFocus(t *testing.T) {
+func TestPaneLayoutUsesFixedPositionalSplits(t *testing.T) {
 	for _, count := range []int{2, 3} {
-		panes := []visiblePane[testChoice]{{title: "History"}, {title: "Seasons", active: count == 2}}
+		panes := []visiblePane[testChoice]{{title: "History"}, {title: "Seasons"}}
 		if count == 3 {
-			panes = append(panes, visiblePane[testChoice]{title: "Episodes", active: true})
+			panes = append(panes, visiblePane[testChoice]{title: "Episodes"})
 		}
-		previous := 0
-		for _, width := range []int{88, 136, 200} {
+		for _, width := range []int{88, 89, 120, 136, 200} {
 			_, widths := paneLayout(width, panes)
-			seasonWidth := widths[1] + 2
-			if paneWidth(widths) != width || seasonWidth <= previous || seasonWidth < width/5 {
-				t.Fatalf("%d panes at %d columns: disproportionate widths %v", count, width, widths)
+			if paneWidth(widths) != width {
+				t.Fatalf("%d panes at %d columns: viewport mismatch %v", count, width, widths)
 			}
-			previous = seasonWidth
-			panes[1].info.open = true
-			_, withInfo := paneLayout(width, panes)
-			if withInfo[1] != widths[1] {
-				t.Fatalf("info toggle changed pane width: %v -> %v", widths, withInfo)
+			main := 0
+			if count == 3 {
+				main = 1
+				if widths[0]+2 != width/5 {
+					t.Fatalf("left parent not at 20%%: %v", widths)
+				}
 			}
-			panes[1].info.open = false
-		}
-		panes[0].active, panes[1].active = true, false
-		if count == 3 {
-			panes[2].active = false
-		}
-		_, inactive := paneLayout(136, panes)
-		panes[0].active, panes[1].active = false, true
-		_, focused := paneLayout(136, panes)
-		if focused[1] <= inactive[1] {
-			t.Fatalf("focused Seasons did not receive extra space: %v -> %v", inactive, focused)
+			if gap := widths[main+1] - widths[main]; gap < 0 || gap > 1 {
+				t.Fatalf("main panes not evenly split: %v", widths)
+			}
+			for focused := range panes {
+				for i := range panes {
+					panes[i].active = i == focused
+					panes[i].info.open = true
+					panes[i].kind = "stream"
+				}
+				_, changed := paneLayout(width, panes)
+				for i := range widths {
+					if changed[i] != widths[i] {
+						t.Fatalf("focus, info, or content shifted widths: %v -> %v", widths, changed)
+					}
+				}
+			}
 		}
 	}
 }

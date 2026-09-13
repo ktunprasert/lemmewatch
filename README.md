@@ -121,9 +121,10 @@ header forwarding remains future work.
 
 Interactive watch uses adaptive navigation panes. Wide terminals show up to
 three navigation panes; medium terminals show two, and narrow terminals show
-the active pane. Seasons use a smaller share of available width, streams get
-more room, and the focused pane receives extra space. All panes grow with the
-terminal width. Pane titles and selection counts sit in the borders.
+the active pane. Two panes split the width equally. Three panes use a
+20/40/40 split: a collapsed left parent and two equal main panes. These ratios
+stay fixed regardless of content, focus, or info visibility. Pane titles and
+selection counts sit in the borders.
 Older ancestors slide off the left while breadcrumbs retain their context.
 Press `i` to toggle selected-item info at the bottom of the focused pane.
 Movies and series show basic metadata and summaries; seasons show episode and

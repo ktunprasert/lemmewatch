@@ -139,44 +139,14 @@ func paneLayout[T item](width int, panes []visiblePane[T]) ([]visiblePane[T], []
 	}
 	start := min(active, len(panes)-count)
 	visible := panes[start : start+count]
-	minimums := make([]int, count)
-	weights := make([]int, count)
-	for i, pane := range visible {
-		kind := pane.kind
-		if kind == "" {
-			kind = strings.ToLower(pane.title)
-		}
-		switch kind {
-		case "season", "seasons":
-			minimums[i], weights[i] = 26, 1
-		case "stream", "streams", "torrents":
-			minimums[i], weights[i] = 40, 4
-		default:
-			minimums[i], weights[i] = 28, 2
-		}
-		if pane.active {
-			weights[i]++
-		}
+	if count == 2 {
+		left := width / 2
+		return visible, []int{left - 2, width - left - 2}
 	}
-	// Unknown pane combinations must also fit at the responsive breakpoints.
-	for sum(minimums) > width {
-		for i := range minimums {
-			if sum(minimums) > width && minimums[i] > 18 {
-				minimums[i]--
-			}
-		}
-	}
-	extra := max(0, width-sum(minimums))
-	weightTotal := sum(weights)
-	widths := make([]int, count)
-	used := 0
-	for i := range count {
-		share := extra * weights[i] / weightTotal
-		widths[i] = minimums[i] + share - 2
-		used += share
-	}
-	widths[count-1] += extra - used
-	return visible, widths
+	// Collapse only the left parent; keep both main panes equally sized.
+	left := width / 5
+	middle := (width - left) / 2
+	return visible, []int{left - 2, middle - 2, width - left - middle - 2}
 }
 
 func browserRows(height int) int {
@@ -204,14 +174,6 @@ func paneKind[T item](p pane[T]) string {
 	default:
 		return "media"
 	}
-}
-
-func sum(values []int) int {
-	total := 0
-	for _, value := range values {
-		total += value
-	}
-	return total
 }
 
 func (m browserModel[T]) breadcrumb() string {

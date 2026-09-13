@@ -246,7 +246,7 @@ func TestPaneLayoutUsesSlidingResponsiveWindow(t *testing.T) {
 	}
 
 	visible, widths = paneLayout(80, panes)
-	if got := paneTitles(visible); got != "Episodes,Torrents" || paneWidth(widths) != 80 || widths[1] <= widths[0] {
+	if got := paneTitles(visible); got != "Episodes,Torrents" || paneWidth(widths) != 80 || widths[1] != widths[0] {
 		t.Fatalf("two-pane layout = %q %#v", got, widths)
 	}
 
