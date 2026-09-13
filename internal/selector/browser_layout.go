@@ -27,7 +27,7 @@ func paneSizeWeights(count int, sizes map[int][]int) []int {
 	if count == 2 {
 		return []int{50, 50}
 	}
-	return []int{20, 40, 40}
+	return []int{10, 30, 60}
 }
 
 func formatPaneSizes(sizes []int) string {

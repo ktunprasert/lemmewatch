@@ -25,7 +25,7 @@ func TestCustomPaneSizesAndInvalidPreferences(t *testing.T) {
 	for _, invalid := range [][]int{nil, {1}, {1, 2}, {0, 2, 3}, {-1, 2, 3}, {1001, 2, 3}} {
 		sizes[3] = invalid
 		_, widths = paneLayout(120, panes, sizes)
-		if !slices.Equal(widths, []int{22, 46, 46}) {
+		if !slices.Equal(widths, []int{16, 34, 64}) {
 			t.Fatalf("invalid sizes %v did not use defaults: %v", invalid, widths)
 		}
 	}
@@ -43,7 +43,7 @@ func TestPaneSizeEditorValidatesSavesAndReturnsToSettings(t *testing.T) {
 	m.overlay, m.settingsIndex = overlaySettings, 10
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
-	if m.overlay != overlayPaneSizes || m.paneSizeCount != 3 || m.paneSizeValue != "20:40:40" {
+	if m.overlay != overlayPaneSizes || m.paneSizeCount != 3 || m.paneSizeValue != "10:30:60" {
 		t.Fatalf("size editor = %#v", m)
 	}
 	saved := false

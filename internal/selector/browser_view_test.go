@@ -41,8 +41,8 @@ func TestBrowserBorderTitlesAndViewportBounds(t *testing.T) {
 func TestPaneLayoutKeepsFocusVisibleAndWidthsProportional(t *testing.T) {
 	panes := []visiblePane[testChoice]{{title: "Media"}, {title: "Seasons"}, {title: "Episodes"}, {title: "Streams", active: true}}
 	_, widths := paneLayout(120, panes, nil)
-	if widths[0] >= widths[1] || widths[2] != widths[1] {
-		t.Fatalf("left parent not collapsed or main panes not equal: %v", widths)
+	if widths[0] >= widths[1] || widths[2] <= widths[1] {
+		t.Fatalf("left parent not collapsed or right pane not widest: %v", widths)
 	}
 	panes[3].active, panes[0].active = false, true
 	visible, widths := paneLayout(120, panes, nil)
@@ -62,15 +62,12 @@ func TestPaneLayoutUsesFixedPositionalSplits(t *testing.T) {
 			if paneWidth(widths) != width {
 				t.Fatalf("%d panes at %d columns: viewport mismatch %v", count, width, widths)
 			}
-			main := 0
 			if count == 3 {
-				main = 1
-				if widths[0]+2 != max(18, width/5) {
-					t.Fatalf("left parent not at 20%%: %v", widths)
+				if widths[0]+2 != max(18, width/10) || widths[1]+2 != width*3/10 {
+					t.Fatalf("three-pane split not 10:30:60 with minimum width: %v", widths)
 				}
-			}
-			if gap := widths[main+1] - widths[main]; gap < 0 || gap > 1 {
-				t.Fatalf("main panes not evenly split: %v", widths)
+			} else if gap := widths[1] - widths[0]; gap < 0 || gap > 1 {
+				t.Fatalf("two panes not evenly split: %v", widths)
 			}
 			for focused := range panes {
 				for i := range panes {
