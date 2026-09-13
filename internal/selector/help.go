@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type browserKeyMap struct {
@@ -32,7 +33,7 @@ type browserKeyMap struct {
 
 func browserKeys() browserKeyMap {
 	return browserKeyMap{
-		Keys:           key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "keys")),
+		Keys:           key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Groups:         key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "movie/series")),
 		Mode:           key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mode")),
 		Sort:           key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort")),
@@ -78,7 +79,7 @@ type helpLineOptions struct {
 func renderHelpLine(model help.Model, width int, bindings []key.Binding, options helpLineOptions) string {
 	if !options.RightColumn {
 		model.Width = width
-		return model.ShortHelpView(bindings)
+		return ansi.Truncate(model.ShortHelpView(bindings), width, "…")
 	}
 	right := versionStyle.Render(options.Right)
 	rightWidth := lipgloss.Width(right)
@@ -90,7 +91,7 @@ func renderHelpLine(model help.Model, width int, bindings []key.Binding, options
 		leftWidth = max(1, width-rightWidth-1)
 	}
 	model.Width = leftWidth
-	left := model.ShortHelpView(bindings)
+	left := ansi.Truncate(model.ShortHelpView(bindings), leftWidth, "…")
 	if rightWidth == 0 {
 		return left
 	}
@@ -100,7 +101,7 @@ func renderHelpLine(model help.Model, width int, bindings []key.Binding, options
 
 func (m browserModel[T]) shortHelp(k browserKeyMap) []key.Binding {
 	rightStreams := m.focusRight && m.rightHasStreams()
-	bindings := make([]key.Binding, 0, 16)
+	bindings := []key.Binding{k.Navigate, k.Keys}
 	if m.playback.busy() {
 		bindings = append(bindings, k.Stop)
 	}
@@ -117,22 +118,21 @@ func (m browserModel[T]) shortHelp(k browserKeyMap) []key.Binding {
 	if m.inHistoryRoot() && m.options.RemoveHistory != nil && m.options.History != nil {
 		bindings = append(bindings, k.Remove)
 	}
-	if m.focusRight {
-		if rightStreams && m.rightCacheApplicable() {
-			bindings = append(bindings, k.Cached, k.Quality)
+	if rightStreams {
+		if m.rightCacheApplicable() {
+			bindings = append(bindings, k.Cached)
 		}
-		if m.canSwitchEpisode() {
-			bindings = append(bindings, k.Episode)
-		}
-		bindings = append(bindings, k.Navigate, k.Home, k.Filter, k.Back)
-		return bindings
+		bindings = append(bindings, k.Quality)
 	}
-	if len(m.options.ParentGroups) > 1 {
+	if m.canSwitchEpisode() {
+		bindings = append(bindings, k.Episode)
+	}
+	if !m.focusRight && len(m.levels) == 1 && len(m.options.ParentGroups) > 1 {
 		bindings = append(bindings, k.Groups)
 	}
-	bindings = append(bindings, k.Keys, k.Mode, k.Sort, k.Navigate, k.Home)
-	if m.options.Requery != nil {
-		bindings = append(bindings, k.History, k.Search)
+	bindings = append(bindings, k.Filter)
+	if m.focusRight || len(m.levels) > 1 || m.right.title != "" {
+		return append(bindings, k.Home, k.Back)
 	}
-	return append(bindings, k.Filter, k.Quit)
+	return append(bindings, k.Quit)
 }

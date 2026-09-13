@@ -98,3 +98,14 @@ func TestSearchOverlayUsesSharedHelpStyles(t *testing.T) {
 		}
 	}
 }
+
+func TestStreamHelpKeepsHelpAndDirectQualityVisible(t *testing.T) {
+	m := newBrowser(testChoice{label: "Movie"})
+	m.width = 64
+	m.right = pane[testChoice]{title: "Streams", items: []testChoice{{label: "Direct", terminal: true, direct: true, playable: true}}}
+	m.focusRight = true
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "? help") || !strings.Contains(view, "v quality") || strings.Contains(view, "c cached/all") {
+		t.Fatalf("direct stream hints = %q", view)
+	}
+}
