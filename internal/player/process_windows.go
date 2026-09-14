@@ -11,6 +11,7 @@ const createNoWindow = 0x08000000
 
 func configureProcess(cmd *exec.Cmd, quiet bool) {
 	if quiet {
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
+		// Suppress a console window without hiding the player's GUI via SW_HIDE.
+		cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
 	}
 }

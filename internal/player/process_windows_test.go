@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-func TestConfigureProcessDetachesQuietPlayer(t *testing.T) {
+func TestConfigureProcessQuietPlayerSuppressesConsoleWithoutHidingGUI(t *testing.T) {
 	cmd := exec.Command("player.exe")
 	configureProcess(cmd, true)
-	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.HideWindow || cmd.SysProcAttr.CreationFlags&createNoWindow == 0 {
+	if cmd.SysProcAttr == nil || cmd.SysProcAttr.HideWindow || cmd.SysProcAttr.CreationFlags&createNoWindow == 0 {
 		t.Fatalf("process attributes = %#v", cmd.SysProcAttr)
 	}
 }
