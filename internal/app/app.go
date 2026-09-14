@@ -696,7 +696,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			if err := a.Storage.RecordHistory(entry); err != nil {
 				return fmt.Errorf("record history: %w", err)
 			}
-			if err := a.Player.Play(playContext, playback); err != nil {
+			if err := a.resumePlayer(selected).Play(playContext, playback); err != nil {
 				if playContext.Err() != nil {
 					return playContext.Err()
 				}

@@ -13,13 +13,15 @@ import (
 )
 
 type Player struct {
-	Executable  string
-	Arguments   []string
-	Stdin       io.Reader
-	Stdout      io.Writer
-	Stderr      io.Writer
-	Verbose     *bool
-	ConfigError error
+	Executable    string
+	Arguments     []string
+	Stdin         io.Reader
+	Stdout        io.Writer
+	Stderr        io.Writer
+	Verbose       *bool
+	ConfigError   error
+	ResumeSeconds int
+	OnProgress    func(Progress)
 }
 
 func (p Player) Play(ctx context.Context, playback model.Playback) error {
@@ -29,7 +31,11 @@ func (p Player) Play(ctx context.Context, playback model.Playback) error {
 	if len(playback.Headers) > 0 {
 		return errors.New("player request headers are not supported")
 	}
-	arguments := append(append([]string(nil), p.Arguments...), playback.URL)
+	arguments, tracker := p.prepareTracking()
+	if tracker != nil {
+		defer tracker.close()
+	}
+	arguments = append(arguments, playback.URL)
 	cmd := exec.CommandContext(ctx, p.Executable, arguments...)
 	stdout, stderr := p.Stdout, p.Stderr
 	quiet := p.Verbose != nil && !*p.Verbose
@@ -38,7 +44,16 @@ func (p Player) Play(ctx context.Context, playback model.Playback) error {
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.Stdin, stdout, stderr
 	configureProcess(cmd, quiet)
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("player %q failed: %w", p.Executable, sanitizeExitError(err))
+	}
+	stopTracking := func() {}
+	if tracker != nil {
+		stopTracking = tracker.start(ctx, p.OnProgress)
+	}
+	err := cmd.Wait()
+	stopTracking()
+	if err != nil {
 		return fmt.Errorf("player %q failed: %w", p.Executable, sanitizeExitError(err))
 	}
 	return nil

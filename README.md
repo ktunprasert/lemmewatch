@@ -60,6 +60,26 @@ and pane detail modes. Enter on Provider cycles available playback providers.
 Player accepts a custom executable. `LEMMEWATCH_PLAYER` takes precedence over
 the saved player preference.
 
+When VLC or mpv is selected directly, browser playback automatically saves the
+position and resumes next time without a prompt. Resume uses CLI flags
+(`--start-time` for VLC, `--start` for mpv); local control interfaces are enabled automatically to read
+the position. VLC uses a dedicated instance with a password-protected loopback
+HTTP interface, polled roughly every five seconds, and resumes five seconds
+before its checkpoint. mpv keeps a private local socket on Linux/macOS or a named
+pipe on Windows open and subscribes to position
+changes. It saves checkpoints every second and flushes the latest received
+position when playback stops or the connection closes. mpv resumes at the saved
+second without a rewind; unchanged positions skip writes. No player setup is
+required. URL-handler launches and the diagnostic `play HASH` command do not
+track position.
+
+Checkpoints follow the movie or episode across refreshed stream URLs and are
+independent of watched state. Switching to a different cut may shift the scene;
+non-seekable streams may not resume. Playing into the last 15 seconds (or last
+5% for short clips) clears the checkpoint. To restart an unfinished title, seek
+to the beginning in the player. If tracking is unavailable, playback continues
+and the previous checkpoint remains.
+
 Player settings may include arguments, for example `mpv.exe --no-border` or
 `"C:\\Program Files\\mpv\\mpv.exe" --no-border`. Commands are parsed into
 structured arguments and never run through a shell. Failures are appended to
@@ -74,9 +94,9 @@ contains the saved TorBox token in plain text and is created with user-only file
 permissions, so transfer it securely. Environment variables, `.env`, logs,
 history, caches, installed players, and OS URL associations are not included.
 
-History and watched state live in `lemmewatch/history.db` under the user config
-directory. On first launch, an existing `history.json` is imported atomically
-and renamed to `history.json.migrated`. Lemmewatch holds this bbolt database for
+History, watched state, and resume positions live in `lemmewatch/history.db`
+under the user config directory. On first launch, an existing `history.json` is
+imported atomically and renamed to `history.json.migrated`. Lemmewatch holds this bbolt database for
 the command's lifetime. A second session waits up to 250 milliseconds, then
 exits with a message asking the user to close the active session. Help and
 version output do not open storage.
