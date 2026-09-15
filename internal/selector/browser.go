@@ -11,11 +11,11 @@ import (
 
 	"lemmewatch/internal/languages"
 	"lemmewatch/internal/model"
+	"lemmewatch/internal/textutil"
 
 	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 type BrowserOptions[T item] struct {
@@ -1169,8 +1169,7 @@ func (m browserModel[T]) childTitle(value T) string {
 }
 
 func plainLabel(value string) string {
-	value = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(value)
-	return strings.Join(strings.Fields(ansi.Strip(value)), " ")
+	return textutil.Clean(value)
 }
 
 func clamp(value, length int) int {

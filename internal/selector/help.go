@@ -83,7 +83,7 @@ func renderHelpLine(model help.Model, width int, bindings []key.Binding, options
 		model.Width = width
 		return ansi.Truncate(model.ShortHelpView(bindings), width, "…")
 	}
-	right := versionStyle.Render(options.Right)
+	right := versionStyle.Render(plainLabel(options.Right))
 	rightWidth := lipgloss.Width(right)
 	if rightWidth >= width {
 		return right

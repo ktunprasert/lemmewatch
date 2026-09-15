@@ -226,6 +226,9 @@ func (m browserModel[T]) breadcrumb() string {
 		parts = append(parts, "Search")
 	}
 	parts = append(parts, m.crumbs...)
+	for i := range parts {
+		parts[i] = plainLabel(parts[i])
+	}
 	return strings.Join(parts, " / ")
 }
 
@@ -353,7 +356,7 @@ func renderBrowserPane[T item](pane visiblePane[T], width, rows int, selectedMod
 			}
 			if status, ok := any(items[i].item).(statusItem); ok {
 				if value := status.Status(watched); value != "" {
-					indicator = value + " "
+					indicator = ansi.Truncate(plainLabel(value), 1, "") + " "
 				}
 			}
 			context := ""

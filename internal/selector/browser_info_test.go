@@ -141,8 +141,8 @@ func TestInfoWrapsUnicodeAndKeepsFramesInsideTerminal(t *testing.T) {
 					t.Fatalf("%dx%d: overflow: %q", width, height, line)
 				}
 			}
-			if !strings.Contains(view, "├─ Info") || !strings.Contains(view, "👋🏽") {
-				t.Fatalf("%dx%d: info missing or Unicode damaged: %s", width, height, view)
+			if !strings.Contains(view, "├─ Info") || strings.Contains(view, "👋") || strings.Contains(view, "🏽") || !strings.Contains(view, "words") {
+				t.Fatalf("%dx%d: info missing or emoji retained: %s", width, height, view)
 			}
 		}
 	}

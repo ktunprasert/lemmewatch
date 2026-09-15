@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type DashboardAction int
@@ -92,7 +93,7 @@ func (m dashboardModel) View() string {
 	tabs := m.mediaTabs()
 	title := headerStyle.Render("Lemmewatch")
 	if m.version != "" {
-		title += " " + versionStyle.Render("("+m.version+")")
+		title += " " + versionStyle.Render("("+plainLabel(m.version)+")")
 	}
 	help := renderHelpLine(newHelpModel(), 58, []key.Binding{
 		hintBinding("tab", "movie/series"),
@@ -104,7 +105,7 @@ func (m dashboardModel) View() string {
 		title,
 		"",
 		"What would you like to watch?",
-		activeBorder.Width(54).Padding(0, 1).Render(m.query+"_"),
+		activeBorder.Width(54).Padding(0, 1).Render(ansi.Truncate(plainLabel(m.query), 51, "…")+"_"),
 		tabs,
 		"",
 		help,

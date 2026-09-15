@@ -660,7 +660,7 @@ func (m browserModel[T]) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func inputModal(title, value string, width int, bindings []key.Binding) string {
-	input := ansi.Truncate(value, max(1, width-3), "…") + "_"
+	input := ansi.Truncate(plainLabel(value), max(1, width-3), "…") + "_"
 	return titledModal(title, strings.Join([]string{
 		input,
 		"",
@@ -675,7 +675,7 @@ func activityModal(frame int, label string) string {
 func (m browserModel[T]) helpModal() string {
 	bindings := m.filteredHelpBindings()
 	title := "Keybindings"
-	lines := []string{"Search: " + m.helpFilter + "_", ""}
+	lines := []string{"Search: " + plainLabel(m.helpFilter) + "_", ""}
 	if len(bindings) == 0 {
 		lines = append(lines, "No matching commands")
 	} else {
@@ -756,7 +756,7 @@ func (m browserModel[T]) settingsModal() string {
 	visible := max(1, height-6)
 	start := max(0, min(m.settingsIndex-visible/2, len(labels)-visible))
 	for i := start; i < min(len(labels), start+visible); i++ {
-		line := fmt.Sprintf("%-20s  < %-16s >", labels[i], values[i])
+		line := fmt.Sprintf("%-20s  < %-16s >", labels[i], plainLabel(values[i]))
 		if i == m.settingsIndex {
 			line = selectedStyle.Render("> " + line)
 		} else {
