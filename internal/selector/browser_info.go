@@ -10,6 +10,15 @@ type infoItem interface {
 	InfoLines(watched map[string]bool) []string
 }
 
+type infoMergeItem[T item] interface{ WithInfo(T) T }
+
+func mergeInfo[T item](current, full T) T {
+	if merger, ok := any(current).(infoMergeItem[T]); ok {
+		return merger.WithInfo(full)
+	}
+	return full
+}
+
 type paneInfoState struct {
 	open    bool
 	offset  int
@@ -29,6 +38,9 @@ func (m *browserModel[T]) toggleInfo() {
 	}
 	key := m.activeInfoKey()
 	m.info[key] = paneInfoState{open: !m.info[key].open}
+	if m.info[key].open {
+		m.infoFailures = nil
+	}
 }
 
 func paneInfoRows(rows int, open bool) int {
@@ -46,12 +58,21 @@ func paneInfoLines[T item](pane visiblePane[T], width int, watched map[string]bo
 		values = []string{"No item details available"}
 	} else if len(pane.items) > 0 {
 		selected := pane.items[clamp(pane.index, len(pane.items))].item
+		if pane.infoItem != nil {
+			selected = mergeInfo(selected, *pane.infoItem)
+		}
 		values = []string{selected.Label()}
 		if detailed, ok := any(selected).(infoItem); ok {
 			if info := detailed.InfoLines(watched); len(info) > 0 {
 				values = info
 			}
 		}
+	}
+	if pane.infoLoading {
+		values = append(values, "Loading additional metadata...")
+	}
+	if pane.infoFailed {
+		values = append(values, "Additional metadata unavailable; close and reopen info to retry")
 	}
 	var lines, clean []string
 	for _, value := range values {

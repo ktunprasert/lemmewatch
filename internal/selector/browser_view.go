@@ -131,6 +131,9 @@ func (m browserModel[T]) browserPanes() []visiblePane[T] {
 		kind := paneKind(m.right)
 		panes = append(panes, visiblePane[T]{title: rightTitle, kind: kind, info: m.info[kind], items: m.filteredRight(), index: m.right.index, filter: m.right.filter, active: m.focusRight, loading: m.loading && !m.searching, err: m.err})
 	}
+	for i := range panes {
+		m.attachInfo(&panes[i])
+	}
 	return panes
 }
 
@@ -360,7 +363,11 @@ func renderBrowserPane[T item](pane visiblePane[T], width, rows int, selectedMod
 				}
 			}
 			context := ""
-			if contextual, ok := any(items[i].item).(contextualItem); ok {
+			detailItem := items[i].item
+			if full, ok := pane.detailItems[infoIdentity(detailItem)]; ok {
+				detailItem = mergeInfo(detailItem, full)
+			}
+			if contextual, ok := any(detailItem).(contextualItem); ok {
 				modes := contextual.ContextModes()
 				if len(modes) > 0 {
 					group := modes[0].Group

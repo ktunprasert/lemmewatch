@@ -31,6 +31,7 @@ type BrowserOptions[T item] struct {
 	PreferredPlayer      string
 	PreferredPlayback    model.PlaybackPreferences
 	SavePlayback         func(model.PlaybackPreferences) error
+	LoadInfo             func(context.Context, T) (T, error)
 	Providers            []string
 	PreferredModes       map[string]string
 	PreferredPaneSizes   map[int][]int
@@ -106,15 +107,19 @@ type pane[T item] struct {
 }
 
 type visiblePane[T item] struct {
-	title   string
-	kind    string
-	info    paneInfoState
-	items   []indexed[T]
-	index   int
-	filter  string
-	active  bool
-	loading bool
-	err     error
+	title       string
+	kind        string
+	info        paneInfoState
+	items       []indexed[T]
+	index       int
+	filter      string
+	active      bool
+	loading     bool
+	err         error
+	infoItem    *T
+	infoLoading bool
+	infoFailed  bool
+	detailItems map[string]T
 }
 
 type loaded[T item] struct {
@@ -123,6 +128,7 @@ type loaded[T item] struct {
 	key      string
 	provider string
 	loadID   uint64
+	refresh  bool
 }
 
 type requeryFinished[T item] struct {
@@ -219,6 +225,11 @@ type browserModel[T item] struct {
 	activeQuery          string
 	mode                 map[string]string
 	info                 map[string]paneInfoState
+	infoItems            map[string]T
+	infoFailures         map[string]bool
+	infoPending          string
+	infoRequestID        uint64
+	infoCancel           context.CancelFunc
 	paneSizes            map[int][]int
 	paneSizeCount        int
 	paneSizeValue        string
@@ -280,12 +291,41 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 				command = cmd
 			}
 		}
+		quitting := false
+		if key, ok := message.(tea.KeyMsg); ok {
+			quitting = key.String() == "ctrl+c" || key.String() == "q" && m.overlay == overlayNone
+		}
+		if quitting {
+			updated.cancelInfo()
+		} else if cmd := updated.ensureInfo(); cmd != nil {
+			if command == nil {
+				command = cmd
+			} else {
+				command = tea.Batch(command, cmd)
+			}
+		}
 		result = updated
 	}()
 	switch msg := message.(type) {
 	case tea.WindowSizeMsg:
 		m.width = max(40, msg.Width)
 		m.height = max(8, msg.Height)
+	case infoLoaded[T]:
+		if msg.requestID != m.infoRequestID {
+			break
+		}
+		m.cancelInfo()
+		if msg.err != nil {
+			if m.infoFailures == nil {
+				m.infoFailures = make(map[string]bool)
+			}
+			m.infoFailures[msg.key] = true
+		} else {
+			if m.infoItems == nil {
+				m.infoItems = make(map[string]T)
+			}
+			m.infoItems[msg.key] = msg.item
+		}
 	case loaded[T]:
 		if msg.provider != m.provider || msg.loadID != m.loadID {
 			break
@@ -296,6 +336,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.right.index = 0
 		m.right.filter = ""
 		if msg.err == nil && msg.key != "" {
+			if msg.refresh {
+				m.invalidateInfo()
+			}
 			if m.loadCache == nil {
 				m.loadCache = make(map[string][]T)
 			}
@@ -319,6 +362,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.focusRight = true
 		m.err = nil
 		m.loadCache = nil
+		m.invalidateInfo()
 		m.toasts.Set(ToastLoad, "Show metadata refreshed")
 	case playProgress:
 		return m.updatePlaybackProgress(msg)
@@ -693,7 +737,7 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 	}
 	return m, func() tea.Msg {
 		items, err := load(m.ctx, selected)
-		return loaded[T]{items: items, err: err, key: key, provider: m.provider, loadID: loadID}
+		return loaded[T]{items: items, err: err, key: key, provider: m.provider, loadID: loadID, refresh: refresh}
 	}
 }
 

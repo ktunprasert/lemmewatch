@@ -186,10 +186,31 @@ Missing or invalid ratios use the defaults. Small panes retain an 18-column
 minimum, so extreme ratios are adjusted to fit the terminal.
 Older ancestors slide off the left while breadcrumbs retain their context.
 Press `i` to toggle selected-item info at the bottom of the focused pane.
-Movies and series show basic metadata and summaries; seasons show episode and
-watched counts and release dates; episodes show titles, dates, ratings, and
-watched state; streams show release titles, quality, size, seeders, availability,
-source, and filename when available. Each pane type remembers its toggle for
+Movies and series show a concise synopsis, rating, genres, runtime, status,
+country, and a short cast/crew list from Cinemeta. Seasons show only episode and
+watched counts, release dates, and the show name. Episodes show one synopsis,
+release date, rating, and watched state. Streams show release title, quality,
+size, seeders, availability, source, filename, and language hints, with compact
+TorBox download progress, pack file count, and file format when available.
+
+Info panels omit duplicate fields, internal IDs/hashes, behavior flags, raw file
+lists, and URL placeholders. Extra provider metadata is still retained for useful
+fields; credentials, request headers, and playback URLs are excluded. Inspecting
+info never queues a torrent or creates a Pro stream.
+Requests run in the background and cancel when selection changes. Cached/basic
+info stays visible on failure; close and reopen `i` to retry. Full Cinemeta details
+are cached for 30 days, while TorBox account details remain session-only. Show
+refresh (`r`/`F5` in seasons/episodes) updates the full metadata cache too.
+
+Rating detail mode (`m`, then `r`) loads missing Cinemeta ratings for visible
+movie/series rows, including History, even with info closed. Ratings appear as
+requests complete. Episode rows use their episode rating when provided; otherwise
+the show rating appears with a `show` suffix. `--` means no rating is available.
+
+External text is normalized before rendering: emoji, wide decorative symbols,
+terminal escapes, invisible formatting controls, and repeated whitespace are
+removed. Ordinary international text is measured and clipped by terminal-cell
+width; pane padding and alignment remain intact. Each pane type remembers its toggle for
 the session. Info follows selection, uses about one-third of the pane height,
 and wraps long text; `Alt-j`/`Alt-k` scroll overflowing details. Toggling info
 keeps pane widths stable. The footer shows contextual shortcuts; `?` opens

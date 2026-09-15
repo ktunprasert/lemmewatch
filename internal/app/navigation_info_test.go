@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"lemmewatch/internal/metadata"
 	"lemmewatch/internal/model"
 )
 
@@ -32,6 +33,46 @@ func TestNavigationInfoUsesAvailableMetadata(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestInfoPanelsShowUsefulFieldsWithoutRawNoise(t *testing.T) {
+	media := model.Media{ID: "tt1", Name: "The Paper", Type: model.Series, Rating: "7.0", Summary: "A newspaper documentary.", Metadata: metadata.Parse([]byte(`{"genres":["Comedy"],"genre":["Comedy"],"cast":["One","Two","Three","Four","Five","Six","Seven"],"runtime":"30 min","country":"United States","status":"Returning Series","background":"https://example.invalid/image","imdb_id":"tt1","links":[{"category":"share","name":"The Paper"}],"behaviorHints":{"hasScheduledVideos":true}}`))}
+	text := strings.Join((navigationChoice{kind: navigationMedia, media: media}).InfoLines(nil), "\n")
+	for _, want := range []string{"Genres: Comedy", "Rating 7.0", "30 min", "A newspaper documentary.", "Cast: One, Two, Three, Four, Five, Six (+1)"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q: %s", want, text)
+		}
+	}
+	if strings.Count(text, "Comedy") != 1 {
+		t.Fatal("duplicate genres")
+	}
+	for _, noise := range []string{"[url omitted]", "Cinemeta:", "Behavior", "tt1", "Links", "Seven"} {
+		if strings.Contains(text, noise) {
+			t.Fatalf("noise %q: %s", noise, text)
+		}
+	}
+	season := navigationChoice{kind: navigationSeason, media: media, season: 1, episodes: []model.Episode{{Season: 1, Episode: 1}}}
+	text = strings.Join(season.InfoLines(nil), "\n")
+	if strings.Contains(text, "Cast") || strings.Contains(text, "documentary") || strings.Contains(text, "Genres") {
+		t.Fatalf("season repeats show details: %s", text)
+	}
+	episode := navigationChoice{kind: navigationEpisode, media: media, episode: model.Episode{Title: "Pilot", Season: 1, Episode: 1, Metadata: metadata.Parse([]byte(`{"description":"The crew finds a newspaper.","overview":"The crew finds a newspaper.","firstAired":"2025-09-04T11:00:00.000Z","number":1,"id":"tt1:1:1"}`))}}
+	text = strings.Join(episode.InfoLines(nil), "\n")
+	if strings.Count(text, "The crew finds a newspaper.") != 1 || strings.Contains(text, "First Aired") || strings.Contains(text, "Id:") {
+		t.Fatalf("episode duplicates: %s", text)
+	}
+	stream := navigationChoice{kind: navigationStream, stream: model.Stream{Title: "Release", Filename: "pilot.mkv", Quality: 1080, Cache: model.CacheCached, Metadata: metadata.Parse([]byte(`{"infoHash":"raw-hash","title":"Release","behaviorHints":{"bingeGroup":"internal"}}`)), CacheMetadata: metadata.Parse([]byte(`{"name":"Season pack","hash":"raw-hash","size":7000000000,"files":[{"short_name":"pilot.mkv","mimetype":"video/x-matroska"},{"short_name":"episode2.mkv"}]}`))}}
+	text = strings.Join(stream.InfoLines(nil), "\n")
+	for _, want := range []string{"Pack: 2 files", "Format: Matroska", "File: pilot.mkv"} {
+		if !strings.Contains(text, want) {
+			t.Fatal(text)
+		}
+	}
+	for _, noise := range []string{"raw-hash", "Binge", "7000000000", "episode2.mkv", "Stream addon:", "TorBox cache:"} {
+		if strings.Contains(text, noise) {
+			t.Fatalf("stream noise %q: %s", noise, text)
+		}
 	}
 }
 

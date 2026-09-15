@@ -145,7 +145,7 @@ func (n navigationChoice) ContextModes() []selector.ContextMode {
 		if n.media.Year > 0 {
 			year = strconv.Itoa(n.media.Year)
 		}
-		modes := []selector.ContextMode{{Group: "media", Key: "y", Name: "Year", Value: year}, {Group: "media", Key: "r", Name: "Rating", Value: n.media.Rating}, {Group: "media", Key: "i", Name: "ID", Value: n.media.ID}, {Group: "media", Key: "t", Name: "Type", Value: string(n.media.Type)}}
+		modes := []selector.ContextMode{{Group: "media", Key: "y", Name: "Year", Value: year}, {Group: "media", Key: "r", Name: "Rating", Value: ratingLabel(n.media.Rating)}, {Group: "media", Key: "i", Name: "ID", Value: n.media.ID}, {Group: "media", Key: "t", Name: "Type", Value: string(n.media.Type)}}
 		if !n.playedAt.IsZero() {
 			modes = append(modes, selector.ContextMode{Group: "media", Key: "p", Name: "Date played", Value: n.playedAt.Local().Format("2006-01-02")})
 		}
@@ -157,7 +157,11 @@ func (n navigationChoice) ContextModes() []selector.ContextMode {
 		if !n.episode.Released.IsZero() {
 			date = n.episode.Released.Format("2006-01-02")
 		}
-		return []selector.ContextMode{{Group: "episode", Key: "a", Name: "Air date", Value: date}, {Group: "episode", Key: "r", Name: "Rating", Value: n.episode.Rating}, {Group: "episode", Key: "i", Name: "ID", Value: n.episode.ID}}
+		rating := ratingLabel(n.episode.Rating)
+		if rating == "--" && ratingLabel(n.media.Rating) != "--" {
+			rating = n.media.Rating + " show"
+		}
+		return []selector.ContextMode{{Group: "episode", Key: "a", Name: "Air date", Value: date}, {Group: "episode", Key: "r", Name: "Rating", Value: rating}, {Group: "episode", Key: "i", Name: "ID", Value: n.episode.ID}}
 	case navigationStream:
 		quality := ""
 		if n.stream.Quality > 0 {
@@ -301,7 +305,7 @@ func (a App) searchCatalog(ctx context.Context, query string, kind model.MediaTy
 }
 
 func (a App) searchCatalogType(ctx context.Context, query string, kind model.MediaType) ([]model.Media, error) {
-	key := storage.SourceFingerprint(a.Catalog.BaseURL) + ":" + string(kind) + ":" + strings.ToLower(strings.TrimSpace(query))
+	key := "v2:" + storage.SourceFingerprint(a.Catalog.BaseURL) + ":" + string(kind) + ":" + strings.ToLower(strings.TrimSpace(query))
 	var items []model.Media
 	if a.Storage != nil {
 		if hit, _ := a.Storage.CacheGet(storage.CacheSearch, key, &items); hit {
@@ -316,18 +320,8 @@ func (a App) searchCatalogType(ctx context.Context, query string, kind model.Med
 }
 
 func (a App) seriesEpisodes(ctx context.Context, imdbID string, refresh bool) ([]model.Episode, error) {
-	key := a.seriesCacheKey(imdbID)
-	var episodes []model.Episode
-	if !refresh && a.Storage != nil {
-		if hit, _ := a.Storage.CacheGet(storage.CacheSeries, key, &episodes); hit {
-			return episodes, nil
-		}
-	}
-	episodes, err := a.Catalog.Episodes(ctx, imdbID)
-	if err == nil && a.Storage != nil {
-		_ = a.Storage.CachePut(storage.CacheSeries, key, episodes, seriesCacheTTL)
-	}
-	return episodes, err
+	details, err := a.catalogDetails(ctx, model.Series, imdbID, refresh)
+	return details.Episodes, err
 }
 
 func (a App) seriesCacheKey(imdbID string) string {
@@ -521,10 +515,12 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 				streams, streamErr := selectedProvider.Streams(ctx, provider.Request{MediaType: model.Movie, ID: selected.media.ID, Title: selected.media.Name, Refresh: refresh})
 				return streamChoices(selected.media, model.Episode{}, streams, streamErr)
 			}
-			episodes, err := a.seriesEpisodes(ctx, selected.media.ID, refresh)
+			details, err := a.catalogDetails(ctx, model.Series, selected.media.ID, refresh)
 			if err != nil {
 				return nil, err
 			}
+			selected.media = mergeMediaDetails(selected.media, details.Media)
+			episodes := details.Episodes
 			bySeason := make(map[int][]model.Episode)
 			for _, episode := range episodes {
 				bySeason[episode.Season] = append(bySeason[episode.Season], episode)
@@ -576,6 +572,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		PreferredProvider: providerID,
 		PreferredPlayer:   preferences.Player,
 		PreferredPlayback: preferences.PlaybackPreferences,
+		LoadInfo:          a.navigationInfo,
 		SavePlayback: func(value model.PlaybackPreferences) error {
 			next := preferences
 			next.PlaybackPreferences = value
