@@ -197,8 +197,12 @@ Search results are cached for 24 hours. Complete series season and episode
 metadata is cached for 30 days. Stable Torrentio candidates are cached for 24
 hours, while TorBox availability is checked when those candidates load into a
 browser session. Temporary WebStreamr and Pengu URLs remain session-only and are
-never written to disk. Press `r` or `F5` in a child pane or on an episode to
-refresh the selected data. Refresh is disabled while the root Movies/Series
+never written to disk. Press `r` or `F5` inside a season or episode list to
+fetch fresh metadata for the whole show, including new seasons and episodes.
+The browser preserves the selected season/episode when it still exists and
+keeps the last good panes if refresh fails. In the stream pane, `r`/`F5`
+refreshes stream candidates and availability instead.
+Refresh is disabled while the root Movies/Series
 or History pane is focused. Failed refreshes leave the last good
 disk cache available for the next load.
 Right/`l` opens the active left item when its child pane is not loaded; only `q`

@@ -396,7 +396,11 @@ func (m browserModel[T]) filteredHelpBindings() []helpBinding {
 		{keys: "q", label: "Quit", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
 	}
 	if m.canRefresh() {
-		bindings = append(bindings, helpBinding{keys: "r / F5", label: "Refresh selected data", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}})
+		label := "Refresh selected data"
+		if m.metadataRootLevel() >= 0 {
+			label = "Refresh show metadata (seasons and episodes)"
+		}
+		bindings = append(bindings, helpBinding{keys: "r / F5", label: label, key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}})
 	}
 	if m.info[m.activeInfoKey()].open {
 		bindings = append(bindings,

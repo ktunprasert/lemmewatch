@@ -36,6 +36,7 @@ type testChoice struct {
 func (c testChoice) ContextModes() []ContextMode       { return c.modes }
 func (c testChoice) Unavailable() bool                 { return c.unavailable }
 func (c testChoice) CacheKey() string                  { return c.cacheKey }
+func (c testChoice) MetadataRoot() bool                { return c.cacheKey == "series:show" }
 func (c testChoice) WatchIdentity() (string, []string) { return c.watchID, c.watchKeys }
 func (c testChoice) WatchThrough() bool                { return c.watchThrough }
 func (c testChoice) Status(map[string]bool) string     { return c.status }

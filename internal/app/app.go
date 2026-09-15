@@ -192,6 +192,9 @@ func (n navigationChoice) Group() string {
 	return ""
 }
 func (n navigationChoice) Terminal() bool { return n.kind == navigationStream }
+func (n navigationChoice) MetadataRoot() bool {
+	return n.kind == navigationMedia && n.media.Type == model.Series
+}
 func (n navigationChoice) Unavailable() bool {
 	return n.kind == navigationEpisode && !n.episode.Released.IsZero() && n.episode.Released.After(time.Now())
 }
@@ -204,6 +207,8 @@ func (n navigationChoice) CacheKey() string {
 		return "streams:" + n.media.ID
 	case navigationEpisode:
 		return "streams:" + n.episode.ID
+	case navigationSeason:
+		return fmt.Sprintf("season:%s:%d", n.media.ID, n.season)
 	}
 	return ""
 }

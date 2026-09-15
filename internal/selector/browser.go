@@ -295,6 +295,20 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		} else if msg.err != nil {
 			m.toasts.Err(ToastLoad, "Load failed: %s", msg.err.Error())
 		}
+	case metadataRefreshed[T]:
+		if msg.loadID != m.loadID || msg.provider != m.provider {
+			break
+		}
+		m.loading = false
+		if msg.err != nil {
+			m.toasts.Err(ToastLoad, "Refresh failed: %s", msg.err.Error())
+			break
+		}
+		m.levels, m.right, m.crumbs = msg.levels, msg.right, msg.crumbs
+		m.focusRight = true
+		m.err = nil
+		m.loadCache = nil
+		m.toasts.Set(ToastLoad, "Show metadata refreshed")
 	case playProgress:
 		return m.updatePlaybackProgress(msg)
 	case playFinished:
@@ -415,6 +429,9 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.move(1 << 30)
 		case "r", "f5":
 			if m.canRefresh() {
+				if root := m.metadataRootLevel(); root >= 0 {
+					return m.refreshMetadata(root)
+				}
 				items := m.filteredCurrent()
 				return m.loadSelected(items[m.current().index].item, true)
 			}
@@ -672,6 +689,9 @@ func (m browserModel[T]) loadSelected(selected T, refresh bool) (tea.Model, tea.
 func (m browserModel[T]) canRefresh() bool {
 	if m.loading || !m.focusRight && len(m.levels) == 1 {
 		return false
+	}
+	if m.metadataRootLevel() >= 0 {
+		return true
 	}
 	items := m.filteredCurrent()
 	if len(items) == 0 {
@@ -1005,22 +1025,8 @@ func (m browserModel[T]) filteredCurrent() []indexed[T] {
 }
 
 func (m browserModel[T]) filteredLevel(level int) []indexed[T] {
-	if level == len(m.levels)-1 {
-		return m.filteredCurrent()
-	}
-	current := m.levels[level]
-	items := filterItems(current.items, current.filter)
-	if level != 0 || len(m.options.ParentGroups) == 0 {
-		return items
-	}
-	group := m.options.ParentGroups[m.groupIndex]
-	result := items[:0]
-	for _, value := range items {
-		if grouped, ok := any(value.item).(groupedItem); ok && grouped.Group() == group {
-			result = append(result, value)
-		}
-	}
-	return result
+	m.levels = m.levels[:level+1]
+	return m.filteredCurrent()
 }
 
 func (m browserModel[T]) filteredRight() []indexed[T] {
