@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"lemmewatch/internal/metadata"
 	"lemmewatch/internal/model"
 )
 
@@ -54,22 +55,34 @@ func (value *flexibleInt64) UnmarshalJSON(data []byte) error {
 }
 
 type response struct {
-	Streams []struct {
-		Name          string `json:"name"`
-		Title         string `json:"title"`
-		Description   string `json:"description"`
-		InfoHash      string `json:"infoHash"`
-		FileIdx       int    `json:"fileIdx"`
-		URL           string `json:"url"`
-		BehaviorHints struct {
-			Filename     string        `json:"filename"`
-			NotWebReady  bool          `json:"notWebReady"`
-			VideoSize    flexibleInt64 `json:"videoSize"`
-			ProxyHeaders struct {
-				Request map[string]string `json:"request"`
-			} `json:"proxyHeaders"`
-		} `json:"behaviorHints"`
-	} `json:"streams"`
+	Streams []rawStream `json:"streams"`
+}
+
+type rawStream struct {
+	Name          string `json:"name"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	InfoHash      string `json:"infoHash"`
+	FileIdx       int    `json:"fileIdx"`
+	URL           string `json:"url"`
+	BehaviorHints struct {
+		Filename     string        `json:"filename"`
+		NotWebReady  bool          `json:"notWebReady"`
+		VideoSize    flexibleInt64 `json:"videoSize"`
+		ProxyHeaders struct {
+			Request map[string]string `json:"request"`
+		} `json:"proxyHeaders"`
+	} `json:"behaviorHints"`
+	Metadata metadata.Fields `json:"-"`
+}
+
+func (s *rawStream) UnmarshalJSON(data []byte) error {
+	type plain rawStream
+	if err := json.Unmarshal(data, (*plain)(s)); err != nil {
+		return err
+	}
+	s.Metadata = metadata.Parse(data)
+	return nil
 }
 
 func (c Client) Streams(ctx context.Context, imdbID string) ([]model.Stream, error) {
@@ -154,6 +167,7 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 		}
 		audio, subtitles, hints := releaseLanguages(raw.Name + "\n" + raw.Title + "\n" + raw.Description + "\n" + raw.BehaviorHints.Filename)
 		streams = append(streams, model.Stream{Hash: hash, URL: streamURL, Headers: raw.BehaviorHints.ProxyHeaders.Request, FileIndex: raw.FileIdx, Title: title, Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: streamSize, NotWebReady: raw.BehaviorHints.NotWebReady, Source: raw.Name, AudioLanguages: audio, SubtitleLanguages: subtitles, LanguageHints: hints})
+		streams[len(streams)-1].Metadata = raw.Metadata
 	}
 	return streams, nil
 }

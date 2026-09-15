@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"lemmewatch/internal/metadata"
 )
 
 type Client struct {
@@ -48,6 +50,23 @@ type file struct {
 }
 
 func (c Client) Cached(ctx context.Context, hashes []string) (map[string]bool, error) {
+	details, err := c.CachedDetails(ctx, hashes)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]bool, len(details))
+	for hash, item := range details {
+		result[hash] = item.Cached
+	}
+	return result, nil
+}
+
+type CacheInfo struct {
+	Cached   bool
+	Metadata metadata.Fields
+}
+
+func (c Client) CachedDetails(ctx context.Context, hashes []string) (map[string]CacheInfo, error) {
 	unique := make([]string, 0, len(hashes))
 	seen := make(map[string]bool, len(hashes))
 	for _, hash := range hashes {
@@ -66,7 +85,7 @@ func (c Client) Cached(ctx context.Context, hashes []string) (map[string]bool, e
 	q := u.Query()
 	q.Set("format", "object")
 	u.RawQuery = q.Encode()
-	result := make(map[string]bool, len(unique))
+	result := make(map[string]CacheInfo, len(unique))
 	const batchSize = 500
 	for start := 0; start < len(unique); start += batchSize {
 		end := min(start+batchSize, len(unique))
@@ -96,13 +115,41 @@ func (c Client) Cached(ctx context.Context, hashes []string) (map[string]bool, e
 		for hash, raw := range payload.Data {
 			var cached bool
 			if json.Unmarshal(raw, &cached) == nil {
-				result[hash] = cached
+				result[strings.ToLower(hash)] = CacheInfo{Cached: cached}
 			} else {
-				result[hash] = string(raw) != "null" && string(raw) != "false"
+				result[strings.ToLower(hash)] = CacheInfo{Cached: string(raw) != "null" && string(raw) != "false", Metadata: metadata.Parse(raw)}
 			}
 		}
 	}
 	return result, nil
+}
+
+// TorrentMetadata only reads an existing download; inspecting info never queues
+// a torrent or creates a Pro stream. Cache metadata remains available otherwise.
+func (c Client) TorrentMetadata(ctx context.Context, hash string) (metadata.Fields, error) {
+	if !validHash(hash) {
+		return nil, fmt.Errorf("invalid torrent info hash")
+	}
+	u, err := c.endpoint("torrents/mylist")
+	if err != nil {
+		return nil, err
+	}
+	var listed envelope[[]json.RawMessage]
+	if err := c.get(ctx, u, &listed); err != nil {
+		return nil, fmt.Errorf("TorBox metadata: %w", err)
+	}
+	if !listed.Success {
+		return nil, fmt.Errorf("TorBox metadata unavailable")
+	}
+	for _, raw := range listed.Data {
+		var identity struct {
+			Hash string `json:"hash"`
+		}
+		if json.Unmarshal(raw, &identity) == nil && strings.EqualFold(identity.Hash, hash) {
+			return metadata.Parse(raw), nil
+		}
+	}
+	return nil, nil
 }
 
 func (c Client) Queue(ctx context.Context, hash string) (int64, error) {

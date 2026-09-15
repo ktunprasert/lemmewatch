@@ -189,7 +189,7 @@ func TestTorBoxCachesOnlyStableCandidatesAndRefreshesAvailability(t *testing.T) 
 	if streamRequests != 2 || cacheRequests != 3 {
 		t.Fatalf("requests = stream %d, cache %d", streamRequests, cacheRequests)
 	}
-	key := "v2:" + storage.SourceFingerprint(server.URL) + ":movie:tt1"
+	key := "v3:" + storage.SourceFingerprint(server.URL) + ":movie:tt1"
 	var candidates []torrentCandidate
 	hit, err := store.CacheGet(storage.CacheTorrents, key, &candidates)
 	if err != nil || !hit || len(candidates) != 1 {

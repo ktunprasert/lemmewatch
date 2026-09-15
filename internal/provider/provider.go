@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"lemmewatch/internal/metadata"
 	"lemmewatch/internal/model"
 	"lemmewatch/internal/storage"
 	"lemmewatch/internal/stremio"
@@ -66,7 +67,7 @@ func (p TorBox) Streams(ctx context.Context, request Request) ([]model.Stream, e
 	}
 	cacheContext, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	cached, err := p.TorBoxClient.Cached(cacheContext, hashes)
+	cached, err := p.TorBoxClient.CachedDetails(cacheContext, hashes)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +75,8 @@ func (p TorBox) Streams(ctx context.Context, request Request) ([]model.Stream, e
 		streams[i].Provider = p.ID()
 		streams[i].Season = request.Season
 		streams[i].Episode = request.Episode
-		streams[i].Playable = cached[streams[i].Hash]
+		streams[i].Playable = cached[streams[i].Hash].Cached
+		streams[i].CacheMetadata = cached[streams[i].Hash].Metadata
 		streams[i].Cache = model.CacheUncached
 		if streams[i].Playable {
 			streams[i].Cache = model.CacheCached
@@ -87,22 +89,23 @@ func (p TorBox) Streams(ctx context.Context, request Request) ([]model.Stream, e
 const torrentCacheTTL = 24 * time.Hour
 
 type torrentCandidate struct {
-	Hash              string   `json:"hash"`
-	FileIndex         int      `json:"file_index"`
-	Title             string   `json:"title"`
-	Filename          string   `json:"filename"`
-	Quality           int      `json:"quality"`
-	Seeders           int      `json:"seeders"`
-	Size              int64    `json:"size"`
-	NotWebReady       bool     `json:"not_web_ready"`
-	Source            string   `json:"source"`
-	AudioLanguages    []string `json:"audio_languages,omitempty"`
-	SubtitleLanguages []string `json:"subtitle_languages,omitempty"`
-	LanguageHints     []string `json:"language_hints,omitempty"`
+	Hash              string          `json:"hash"`
+	FileIndex         int             `json:"file_index"`
+	Title             string          `json:"title"`
+	Filename          string          `json:"filename"`
+	Quality           int             `json:"quality"`
+	Seeders           int             `json:"seeders"`
+	Size              int64           `json:"size"`
+	NotWebReady       bool            `json:"not_web_ready"`
+	Source            string          `json:"source"`
+	AudioLanguages    []string        `json:"audio_languages,omitempty"`
+	SubtitleLanguages []string        `json:"subtitle_languages,omitempty"`
+	LanguageHints     []string        `json:"language_hints,omitempty"`
+	Metadata          metadata.Fields `json:"metadata,omitempty"`
 }
 
 func (p TorBox) torrentCandidates(ctx context.Context, request Request) ([]model.Stream, error) {
-	key := "v2:" + storage.SourceFingerprint(p.StreamsClient.BaseURL) + ":" + string(request.MediaType) + ":" + request.ID
+	key := "v3:" + storage.SourceFingerprint(p.StreamsClient.BaseURL) + ":" + string(request.MediaType) + ":" + request.ID
 	var candidates []torrentCandidate
 	if !request.Refresh && p.Storage != nil {
 		if hit, _ := p.Storage.CacheGet(storage.CacheTorrents, key, &candidates); hit {
@@ -123,6 +126,7 @@ func (p TorBox) torrentCandidates(ctx context.Context, request Request) ([]model
 			Filename: stream.Filename, Quality: stream.Quality, Seeders: stream.Seeders,
 			Size: stream.Size, NotWebReady: stream.NotWebReady, Source: stream.Source,
 			AudioLanguages: stream.AudioLanguages, SubtitleLanguages: stream.SubtitleLanguages, LanguageHints: stream.LanguageHints,
+			Metadata: stream.Metadata,
 		})
 	}
 	if len(candidates) == 0 {
@@ -142,9 +146,18 @@ func candidateStreams(candidates []torrentCandidate) []model.Stream {
 			Filename: candidate.Filename, Quality: candidate.Quality, Seeders: candidate.Seeders,
 			Size: candidate.Size, NotWebReady: candidate.NotWebReady, Source: candidate.Source,
 			AudioLanguages: candidate.AudioLanguages, SubtitleLanguages: candidate.SubtitleLanguages, LanguageHints: candidate.LanguageHints,
+			Metadata: candidate.Metadata,
 		}
 	}
 	return streams
+}
+
+func (p TorBox) Info(ctx context.Context, stream model.Stream) (model.Stream, error) {
+	fields, err := p.TorBoxClient.TorrentMetadata(ctx, stream.Hash)
+	if err == nil {
+		stream.TorrentMetadata = fields
+	}
+	return stream, err
 }
 
 func (p TorBox) Resolve(ctx context.Context, stream model.Stream) (model.Playback, error) {

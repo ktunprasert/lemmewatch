@@ -15,6 +15,7 @@ const (
 	CacheSearch   = "search"
 	CacheSeries   = "series"
 	CacheTorrents = "torrents"
+	CacheMetadata = "metadata"
 
 	expirySweepLimit = 128
 )

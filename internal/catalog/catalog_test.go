@@ -2,6 +2,8 @@ package catalog
 
 import (
 	"context"
+	"lemmewatch/internal/metadata"
+	"lemmewatch/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +24,36 @@ func TestSearch(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != "tt1160419" || items[0].Year != 2021 || items[0].Rating != "8.0" {
 		t.Fatalf("items = %#v", items)
+	}
+}
+
+func TestFullMetadataPreservesUnmodeledFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/meta/series/tt123.json" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"meta":{"name":"Series","releaseInfo":"2020-2026","cast":["One","Two"],"runtime":"45 min","awards":"Award winner","newField":{"flag":true},"videos":[{"id":"tt123:1:1","name":"Pilot","season":1,"episode":1,"overview":"Episode synopsis","guestStars":["Guest"],"tvdb_id":12345}]}}`))
+	}))
+	defer server.Close()
+	details, err := (Client{BaseURL: server.URL, HTTP: server.Client()}).Details(context.Background(), model.Series, "tt123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.Media.ID != "tt123" || details.Media.Year != 2020 || details.Media.Type != model.Series {
+		t.Fatal(details.Media)
+	}
+	text := strings.Join(metadata.Lines("Cinemeta", details.Media.Metadata), "\n")
+	for _, want := range []string{"Cast: One, Two", "Runtime: 45 min", "Awards: Award winner", "New Field > Flag: true"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %s: %s", want, text)
+		}
+	}
+	if len(details.Episodes) != 1 || details.Media.Metadata["videos"] != nil {
+		t.Fatal("episode metadata not separated")
+	}
+	text = strings.Join(metadata.Lines("Episode", details.Episodes[0].Metadata), "\n")
+	if !strings.Contains(text, "Overview: Episode synopsis") || !strings.Contains(text, "Guest Stars: Guest") {
+		t.Fatal(text)
 	}
 }
 

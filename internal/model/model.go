@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"lemmewatch/internal/metadata"
+	"time"
+)
 
 type MediaType string
 
@@ -19,6 +22,7 @@ type Media struct {
 	Rating        string
 	PlayedAt      time.Time
 	UpdateEpisode string
+	Metadata      metadata.Fields
 }
 
 type Stream struct {
@@ -42,6 +46,9 @@ type Stream struct {
 	SubtitleLanguages []string
 	LanguageHints     []string
 	MatchRank         int
+	Metadata          metadata.Fields
+	CacheMetadata     metadata.Fields
+	TorrentMetadata   metadata.Fields
 }
 
 type PlaybackPreferences struct {
@@ -70,4 +77,10 @@ type Episode struct {
 	Episode  int
 	Released time.Time
 	Rating   string
+	Metadata metadata.Fields
+}
+
+type MediaDetails struct {
+	Media    Media
+	Episodes []Episode
 }
