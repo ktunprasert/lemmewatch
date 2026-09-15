@@ -5,17 +5,22 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"lemmewatch/internal/model"
 )
 
 func TestPreferencesRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
 	cachedOnly := false
-	if err := Save(Preferences{Quality: 1080, MediaTab: "series", CachedOnly: &cachedOnly, Provider: "webstreamr", TorBoxToken: "secret", Player: "vlc", DetailModes: map[string]string{"media": "i"}, PaneSizes: map[int][]int{2: {1, 1}, 3: {1, 2, 3}}}); err != nil {
+	if err := Save(Preferences{PlaybackPreferences: model.PlaybackPreferences{AudioLanguages: []string{"ja", "en"}, SubtitleLanguages: []string{"en", "fr"}, PlaybackSpeed: 1.25}, Quality: 1080, MediaTab: "series", CachedOnly: &cachedOnly, Provider: "webstreamr", TorBoxToken: "secret", Player: "vlc", DetailModes: map[string]string{"media": "i"}, PaneSizes: map[int][]int{2: {1, 1}, 3: {1, 2, 3}}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := Load().Quality; got != 1080 {
 		t.Fatalf("quality = %d", got)
+	}
+	if got := Load(); !slices.Equal(got.AudioLanguages, []string{"ja", "en"}) || !slices.Equal(got.SubtitleLanguages, []string{"en", "fr"}) || got.PlaybackSpeed != 1.25 {
+		t.Fatalf("playback preferences = %#v", got.PlaybackPreferences)
 	}
 	if got := Load().MediaTab; got != "series" {
 		t.Fatalf("media tab = %q", got)

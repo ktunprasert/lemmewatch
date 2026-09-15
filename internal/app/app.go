@@ -236,7 +236,7 @@ func (n navigationChoice) WatchThrough() bool {
 	return n.kind == navigationSeason || n.kind == navigationEpisode
 }
 func (n navigationChoice) StreamInfo() (selector.StreamInfo, bool) {
-	return selector.StreamInfo{Cached: n.stream.Cache == model.CacheCached, CacheApplicable: n.stream.Cache != model.CacheNotApplicable, Playable: n.stream.Playable, Quality: n.stream.Quality}, n.kind == navigationStream
+	return selector.StreamInfo{Cached: n.stream.Cache == model.CacheCached, CacheApplicable: n.stream.Cache != model.CacheNotApplicable, Playable: n.stream.Playable, Quality: n.stream.Quality, AudioLanguages: n.stream.AudioLanguages, SubtitleLanguages: n.stream.SubtitleLanguages, LanguageHints: n.stream.LanguageHints, MatchRank: n.stream.MatchRank}, n.kind == navigationStream
 }
 func (n navigationChoice) SortFields() (string, int, time.Time, bool) {
 	if n.kind == navigationStream {
@@ -497,6 +497,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 	}
 	preferences := config.Load()
 	providerID := a.Provider
+	var playbackMu sync.RWMutex
 	var progressCh chan string
 	requery := func(searchContext context.Context, query string) ([]navigationChoice, error) {
 		results, err := a.searchCatalog(searchContext, query, "")
@@ -563,17 +564,27 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 	_, err = selector.Browse(ctx, a.In, a.Out, choices, func(ctx context.Context, selected navigationChoice) ([]navigationChoice, error) {
 		return load(ctx, selected, false)
 	}, selector.BrowserOptions[navigationChoice]{
-		InitialTitle:       initialTitle,
-		InitialQuery:       initialQuery,
-		InitialSearch:      initialSearch,
-		Version:            a.Version,
-		ParentGroups:       parentGroups,
-		SearchGroups:       []string{string(model.Movie), string(model.Series)},
-		PreferredGroup:     preferences.MediaTab,
-		PreferredQuality:   preferences.Quality,
-		PreferredCached:    preferences.CachedOnly,
-		PreferredProvider:  providerID,
-		PreferredPlayer:    preferences.Player,
+		InitialTitle:      initialTitle,
+		InitialQuery:      initialQuery,
+		InitialSearch:     initialSearch,
+		Version:           a.Version,
+		ParentGroups:      parentGroups,
+		SearchGroups:      []string{string(model.Movie), string(model.Series)},
+		PreferredGroup:    preferences.MediaTab,
+		PreferredQuality:  preferences.Quality,
+		PreferredCached:   preferences.CachedOnly,
+		PreferredProvider: providerID,
+		PreferredPlayer:   preferences.Player,
+		PreferredPlayback: preferences.PlaybackPreferences,
+		SavePlayback: func(value model.PlaybackPreferences) error {
+			next := preferences
+			next.PlaybackPreferences = value
+			if err := config.Save(next); err != nil {
+				return err
+			}
+			preferences = next
+			return nil
+		},
 		Providers:          a.ProviderNames,
 		PreferredModes:     preferences.DetailModes,
 		PreferredPaneSizes: preferences.PaneSizes,
@@ -640,6 +651,8 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			return a.setTorBoxToken(key)
 		},
 		SavePlayer: func(player string) error {
+			playbackMu.Lock()
+			defer playbackMu.Unlock()
 			nextPlayer := a.Player
 			if err := applyPlayerPreference(&nextPlayer, a.DefaultPlayer, a.PlayerOverridden, player); err != nil {
 				_ = config.LogFailure("player preference", err)
@@ -671,6 +684,10 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			return progressCh
 		},
 		Play: func(playContext context.Context, selected navigationChoice) error {
+			playbackMu.RLock()
+			selectedPlayer := a.resumePlayer(selected)
+			playbackMu.RUnlock()
+			selectedPlayer.Preferences = config.Load().PlaybackPreferences
 			ch := progressCh
 			defer close(ch)
 			streamProvider, err := a.provider(selected.stream.Provider)
@@ -701,7 +718,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			if err := a.Storage.RecordHistory(entry); err != nil {
 				return fmt.Errorf("record history: %w", err)
 			}
-			if err := a.resumePlayer(selected).Play(playContext, playback); err != nil {
+			if err := selectedPlayer.Play(playContext, playback); err != nil {
 				if playContext.Err() != nil {
 					return playContext.Err()
 				}

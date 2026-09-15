@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"lemmewatch/internal/languages"
+	"lemmewatch/internal/model"
+
 	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -26,6 +29,8 @@ type BrowserOptions[T item] struct {
 	PreferredCached      *bool
 	PreferredProvider    string
 	PreferredPlayer      string
+	PreferredPlayback    model.PlaybackPreferences
+	SavePlayback         func(model.PlaybackPreferences) error
 	Providers            []string
 	PreferredModes       map[string]string
 	PreferredPaneSizes   map[int][]int
@@ -59,10 +64,14 @@ type streamItem interface {
 }
 
 type StreamInfo struct {
-	Quality         int
-	Cached          bool
-	CacheApplicable bool
-	Playable        bool
+	Quality           int
+	Cached            bool
+	CacheApplicable   bool
+	Playable          bool
+	AudioLanguages    []string
+	SubtitleLanguages []string
+	LanguageHints     []string
+	MatchRank         int
 }
 type sortableItem interface {
 	SortFields() (name string, year int, playedAt time.Time, ok bool)
@@ -194,49 +203,51 @@ func isWatched(value any, state map[string]bool) bool {
 }
 
 type browserModel[T item] struct {
-	ctx                 context.Context
-	levels              []pane[T]
-	right               pane[T]
-	load                func(context.Context, T) ([]T, error)
-	options             BrowserOptions[T]
-	crumbs              []string
-	groupIndex          int
-	focusRight          bool
-	loading             bool
-	searching           bool
-	historyBusy         bool
-	err                 error
-	query               string
-	activeQuery         string
-	mode                map[string]string
-	info                map[string]paneInfoState
-	paneSizes           map[int][]int
-	paneSizeCount       int
-	paneSizeValue       string
-	sortMode            sortMode
-	streamSort          sortMode
-	helpFilter          string
-	helpIndex           int
-	settingsIndex       int
-	player              string
-	provider            string
-	customPlayerValue   string
-	providerAPIKeyFor   string
-	providerAPIKeyValue string
-	pendingG            bool
-	cachedOnly          bool
-	quality             int
-	overlay             overlayKind
-	overlayStack        []overlayKind
-	width               int
-	height              int
-	chosen              bool
-	choice              T
-	playback            playbackModel
-	loadCache           map[string][]T
-	loadID              uint64
-	help                help.Model
-	toasts              toastModel
+	ctx                  context.Context
+	levels               []pane[T]
+	right                pane[T]
+	load                 func(context.Context, T) ([]T, error)
+	options              BrowserOptions[T]
+	crumbs               []string
+	groupIndex           int
+	focusRight           bool
+	loading              bool
+	searching            bool
+	historyBusy          bool
+	err                  error
+	query                string
+	activeQuery          string
+	mode                 map[string]string
+	info                 map[string]paneInfoState
+	paneSizes            map[int][]int
+	paneSizeCount        int
+	paneSizeValue        string
+	sortMode             sortMode
+	streamSort           sortMode
+	helpFilter           string
+	helpIndex            int
+	settingsIndex        int
+	player               string
+	playbackPreferences  model.PlaybackPreferences
+	playbackSettingValue string
+	provider             string
+	customPlayerValue    string
+	providerAPIKeyFor    string
+	providerAPIKeyValue  string
+	pendingG             bool
+	cachedOnly           bool
+	quality              int
+	overlay              overlayKind
+	overlayStack         []overlayKind
+	width                int
+	height               int
+	chosen               bool
+	choice               T
+	playback             playbackModel
+	loadCache            map[string][]T
+	loadID               uint64
+	help                 help.Model
+	toasts               toastModel
 }
 
 var (
@@ -1046,7 +1057,36 @@ func (m browserModel[T]) filteredRight() []indexed[T] {
 		}
 		result = append(result, value)
 	}
-	if m.streamSort != sortRelevance {
+	if m.streamSort == sortRelevance && (len(m.playbackPreferences.AudioLanguages) > 0 || len(m.playbackPreferences.SubtitleLanguages) > 0) {
+		sort.SliceStable(result, func(i, j int) bool {
+			left, leftOK := any(result[i].item).(streamItem)
+			right, rightOK := any(result[j].item).(streamItem)
+			if !leftOK || !rightOK {
+				return false
+			}
+			a, aOK := left.StreamInfo()
+			b, bOK := right.StreamInfo()
+			if !aOK || !bOK {
+				return false
+			}
+			if a.MatchRank != b.MatchRank {
+				return a.MatchRank < b.MatchRank
+			}
+			aAudio, bAudio := a.AudioLanguages, b.AudioLanguages
+			if len(aAudio) == 0 {
+				aAudio = a.LanguageHints
+			}
+			if len(bAudio) == 0 {
+				bAudio = b.LanguageHints
+			}
+			aRank := languages.Rank(aAudio, m.playbackPreferences.AudioLanguages)
+			bRank := languages.Rank(bAudio, m.playbackPreferences.AudioLanguages)
+			if aRank != bRank {
+				return aRank < bRank
+			}
+			return languages.Rank(a.SubtitleLanguages, m.playbackPreferences.SubtitleLanguages) < languages.Rank(b.SubtitleLanguages, m.playbackPreferences.SubtitleLanguages)
+		})
+	} else if m.streamSort != sortRelevance {
 		sort.SliceStable(result, func(i, j int) bool {
 			leftStream, leftOK := any(result[i].item).(streamItem)
 			rightStream, rightOK := any(result[j].item).(streamItem)
@@ -1165,6 +1205,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 		cachedOnly = *options.PreferredCached
 	}
 	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, paneSizes: maps.Clone(options.PreferredPaneSizes), provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24, help: newHelpModel()}
+	initial.playbackPreferences = options.PreferredPlayback
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()
 	if err != nil {

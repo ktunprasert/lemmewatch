@@ -13,24 +13,26 @@ import (
 )
 
 type testChoice struct {
-	label        string
-	prefix       string
-	infoLines    []string
-	group        string
-	terminal     bool
-	cached       bool
-	quality      int
-	year         int
-	playedAt     time.Time
-	modes        []ContextMode
-	unavailable  bool
-	cacheKey     string
-	direct       bool
-	playable     bool
-	watchID      string
-	watchKeys    []string
-	watchThrough bool
-	status       string
+	label                                            string
+	prefix                                           string
+	infoLines                                        []string
+	group                                            string
+	terminal                                         bool
+	cached                                           bool
+	quality                                          int
+	year                                             int
+	playedAt                                         time.Time
+	modes                                            []ContextMode
+	unavailable                                      bool
+	cacheKey                                         string
+	direct                                           bool
+	playable                                         bool
+	watchID                                          string
+	watchKeys                                        []string
+	watchThrough                                     bool
+	status                                           string
+	audioLanguages, subtitleLanguages, languageHints []string
+	matchRank                                        int
 }
 
 func (c testChoice) ContextModes() []ContextMode       { return c.modes }
@@ -47,7 +49,7 @@ func (c testChoice) InfoLines(map[string]bool) []string { return c.infoLines }
 func (c testChoice) Group() string                      { return c.group }
 func (c testChoice) Terminal() bool                     { return c.terminal }
 func (c testChoice) StreamInfo() (StreamInfo, bool) {
-	return StreamInfo{Cached: c.cached, CacheApplicable: c.terminal && !c.direct, Playable: c.cached || c.playable, Quality: c.quality}, c.terminal
+	return StreamInfo{Cached: c.cached, CacheApplicable: c.terminal && !c.direct, Playable: c.cached || c.playable, Quality: c.quality, AudioLanguages: c.audioLanguages, SubtitleLanguages: c.subtitleLanguages, LanguageHints: c.languageHints, MatchRank: c.matchRank}, c.terminal
 }
 func (c testChoice) SortFields() (string, int, time.Time, bool) {
 	return c.label, c.year, c.playedAt, !c.terminal

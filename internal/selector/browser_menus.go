@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"lemmewatch/internal/languages"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -22,6 +24,7 @@ const (
 	overlayQuery
 	overlayFilter
 	overlayPaneSizes
+	overlayPlaybackSetting
 )
 
 func (m *browserModel[T]) openOverlay(kind overlayKind) {
@@ -65,6 +68,8 @@ func (m *browserModel[T]) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateFilter(msg)
 	case overlayPaneSizes:
 		return m.updatePaneSizes(msg)
+	case overlayPlaybackSetting:
+		return m.updatePlaybackSetting(msg)
 	default:
 		return m, nil
 	}
@@ -148,7 +153,7 @@ func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 var settingModeGroups = []string{"media", "season", "episode", "stream"}
 
-const settingsCount = 11
+const settingsCount = 14
 
 func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -163,7 +168,10 @@ func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right", "l":
 		m.changeSetting(1)
 	case "enter":
-		if m.settingsIndex == 4 {
+		if m.settingsIndex >= 11 {
+			m.playbackSettingValue = m.playbackSettingText()
+			m.openOverlay(overlayPlaybackSetting)
+		} else if m.settingsIndex == 4 {
 			m.openOverlay(overlayCustomPlayer)
 			m.customPlayerValue = m.player
 			if m.player == "mpv" || m.player == "vlc" {
@@ -243,6 +251,43 @@ func (m *browserModel[T]) changeSetting(delta int) {
 		m.paneSizeCount = m.settingsIndex - 7
 		m.paneSizeValue = formatPaneSizes(paneSizeWeights(m.paneSizeCount, m.paneSizes))
 		m.openOverlay(overlayPaneSizes)
+	case 11, 12:
+		values := m.playbackPreferences.AudioLanguages
+		if m.settingsIndex == 12 {
+			values = m.playbackPreferences.SubtitleLanguages
+		}
+		index := 0
+		if len(values) > 0 {
+			for i, choice := range languages.Choices {
+				if choice.Code == values[0] {
+					index = i + 1
+					break
+				}
+			}
+		}
+		index = wrapIndex(index+delta, len(languages.Choices)+1)
+		var next []string
+		if index > 0 {
+			next = []string{languages.Choices[index-1].Code}
+		}
+		preferences := m.playbackPreferences
+		if m.settingsIndex == 11 {
+			preferences.AudioLanguages = next
+		} else {
+			preferences.SubtitleLanguages = next
+		}
+		m.savePlaybackPreferences(preferences)
+	case 13:
+		speeds := []float64{0, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3}
+		index := 0
+		for i, speed := range speeds {
+			if speed == m.playbackPreferences.PlaybackSpeed {
+				index = i
+			}
+		}
+		preferences := m.playbackPreferences
+		preferences.PlaybackSpeed = speeds[wrapIndex(index+delta, len(speeds))]
+		m.savePlaybackPreferences(preferences)
 	default:
 		group := settingModeGroups[m.settingsIndex-5]
 		modes := m.options.ModeOptions[group]
@@ -701,8 +746,16 @@ func (m browserModel[T]) settingsModal() string {
 	}
 	labels = append(labels, "Two-pane sizes", "Three-pane sizes")
 	values = append(values, formatPaneSizes(paneSizeWeights(2, m.paneSizes)), formatPaneSizes(paneSizeWeights(3, m.paneSizes)))
+	labels = append(labels, "Audio languages", "Subtitle languages", "Playback speed")
+	values = append(values, languageSettingLabel(m.playbackPreferences.AudioLanguages), languageSettingLabel(m.playbackPreferences.SubtitleLanguages), speedSettingLabel(m.playbackPreferences.PlaybackSpeed))
 	lines := make([]string, 0, len(labels)+2)
-	for i := range labels {
+	height := m.height
+	if height <= 0 {
+		height = 24
+	}
+	visible := max(1, height-6)
+	start := max(0, min(m.settingsIndex-visible/2, len(labels)-visible))
+	for i := start; i < min(len(labels), start+visible); i++ {
 		line := fmt.Sprintf("%-20s  < %-16s >", labels[i], values[i])
 		if i == m.settingsIndex {
 			line = selectedStyle.Render("> " + line)

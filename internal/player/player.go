@@ -22,6 +22,7 @@ type Player struct {
 	ConfigError   error
 	ResumeSeconds int
 	OnProgress    func(Progress)
+	Preferences   model.PlaybackPreferences
 }
 
 func (p Player) Play(ctx context.Context, playback model.Playback) error {
@@ -35,6 +36,7 @@ func (p Player) Play(ctx context.Context, playback model.Playback) error {
 	if tracker != nil {
 		defer tracker.close()
 	}
+	arguments = append(arguments, p.preferenceArguments()...)
 	arguments = append(arguments, playback.URL)
 	cmd := exec.CommandContext(ctx, p.Executable, arguments...)
 	stdout, stderr := p.Stdout, p.Stderr

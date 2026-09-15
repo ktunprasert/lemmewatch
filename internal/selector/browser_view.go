@@ -46,6 +46,17 @@ func (m browserModel[T]) View() string {
 		})
 	case overlaySettings:
 		modal = m.settingsModal()
+	case overlayPlaybackSetting:
+		title := "Audio languages (first → fallback: ja,en)"
+		if m.settingsIndex == 12 {
+			title = "Subtitle languages (first → fallback: en,ja)"
+		}
+		if m.settingsIndex == 13 {
+			title = "Playback speed (0.25–4; empty = default)"
+		}
+		modal = inputModal(title, m.playbackSettingValue, 54, []key.Binding{
+			hintBinding("enter", "save"), hintBinding("esc", "cancel"), hintBinding("ctrl-u", "default"),
+		})
 	case overlayPaneSizes:
 		modal = inputModal(fmt.Sprintf("%d-pane sizes", m.paneSizeCount), m.paneSizeValue, 50, []key.Binding{
 			hintBinding("enter", "save"),

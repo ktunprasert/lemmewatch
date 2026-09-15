@@ -146,7 +146,7 @@ func configuredApp(verbose *bool) app.App {
 		Provider:         providerID,
 		ProviderError:    providerError,
 		TorBox:           torboxClient,
-		Player:           player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose, ConfigError: playerConfigError},
+		Player:           player.Player{Executable: playerName, Arguments: playerArguments, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Verbose: verbose, ConfigError: playerConfigError, Preferences: preferences.PlaybackPreferences},
 		DefaultPlayer:    defaultPlayerConfig,
 		PlayerOverridden: os.Getenv("LEMMEWATCH_PLAYER") != "",
 		Storage:          store,

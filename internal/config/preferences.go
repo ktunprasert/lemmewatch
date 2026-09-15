@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"lemmewatch/internal/model"
 )
 
 type Preferences struct {
+	model.PlaybackPreferences
 	Quality     int               `json:"quality,omitempty"`
 	MediaTab    string            `json:"media_tab,omitempty"`
 	CachedOnly  *bool             `json:"cached_only,omitempty"`

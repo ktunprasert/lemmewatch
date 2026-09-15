@@ -44,6 +44,12 @@ type Stream struct {
 	MatchRank         int
 }
 
+type PlaybackPreferences struct {
+	AudioLanguages    []string `json:"audio_languages,omitempty"`
+	SubtitleLanguages []string `json:"subtitle_languages,omitempty"`
+	PlaybackSpeed     float64  `json:"playback_speed,omitempty"`
+}
+
 type CacheStatus string
 
 const (

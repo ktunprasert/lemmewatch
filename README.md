@@ -60,6 +60,38 @@ and pane detail modes. Enter on Provider cycles available playback providers.
 Player accepts a custom executable. `LEMMEWATCH_PLAYER` takes precedence over
 the saved player preference.
 
+**Audio languages**, **Subtitle languages**, and **Playback speed** are also
+saved in Settings. Left/Right cycles languages or common speeds. Enter edits an
+ordered, comma-separated language list, for example `ja,en` for Japanese first,
+then English. Language names, ISO two/three-letter codes, and region tags such as
+`pt-BR` are accepted. Clear the field with Ctrl-U and save to use the default.
+Speed accepts 0.25–4, including custom values such as `1.35`; clearing it leaves
+the player's default speed in effect. Changes apply to the next playback.
+
+Default stream ranking prefers audio languages in order, then subtitle languages,
+while preserving title/episode matching priority and existing quality/cache filters.
+Unknown-language releases remain available ahead of known nonmatches; equally
+matched releases retain their original ranking. Explicit stream sorts override
+language ranking. Changing language settings immediately reranks loaded streams.
+Stream info (`i`) shows the available release language hints.
+
+[Torrentio language flags](https://github.com/TheBeastLT/torrentio-scraper/blob/master/addon/lib/languages.js)
+and release names are hints, not verified track lists.
+English-only and some Japanese flags may be omitted; `MULTI`, `DUAL`, and the
+ambiguous Indian flag do not establish a specific language. Explicit `Audio:`
+and `Subtitles:`/`Subs:` sections are recognized separately. Generic flags help
+audio ranking but never claim a subtitle track. TorBox's cache API supplies file
+names rather than track languages; its separate Pro streaming API exposes audio
+and subtitle metadata after creating a stream ([TorBox API docs](https://api-docs.torbox.app/)). This app uses direct file playback
+and release hints, without requiring that Pro API.
+
+Directly selected **mpv** and **VLC** receive ordered audio/subtitle language
+preferences and playback speed. They select the first available preferred track,
+then fall back to normal track selection. VLC uses the base language for region
+tags. Preferences select tracks available to the player; they do not download
+external subtitles or add missing audio tracks. System URL handlers and other
+custom players receive the URL only and use their own playback preferences.
+
 When VLC or mpv is selected directly, browser playback automatically saves the
 position and resumes next time without a prompt. Resume uses CLI flags
 (`--start-time` for VLC, `--start` for mpv); local control interfaces are enabled automatically to read
