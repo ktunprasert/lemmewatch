@@ -87,19 +87,22 @@ func (p TorBox) Streams(ctx context.Context, request Request) ([]model.Stream, e
 const torrentCacheTTL = 24 * time.Hour
 
 type torrentCandidate struct {
-	Hash        string `json:"hash"`
-	FileIndex   int    `json:"file_index"`
-	Title       string `json:"title"`
-	Filename    string `json:"filename"`
-	Quality     int    `json:"quality"`
-	Seeders     int    `json:"seeders"`
-	Size        int64  `json:"size"`
-	NotWebReady bool   `json:"not_web_ready"`
-	Source      string `json:"source"`
+	Hash              string   `json:"hash"`
+	FileIndex         int      `json:"file_index"`
+	Title             string   `json:"title"`
+	Filename          string   `json:"filename"`
+	Quality           int      `json:"quality"`
+	Seeders           int      `json:"seeders"`
+	Size              int64    `json:"size"`
+	NotWebReady       bool     `json:"not_web_ready"`
+	Source            string   `json:"source"`
+	AudioLanguages    []string `json:"audio_languages,omitempty"`
+	SubtitleLanguages []string `json:"subtitle_languages,omitempty"`
+	LanguageHints     []string `json:"language_hints,omitempty"`
 }
 
 func (p TorBox) torrentCandidates(ctx context.Context, request Request) ([]model.Stream, error) {
-	key := storage.SourceFingerprint(p.StreamsClient.BaseURL) + ":" + string(request.MediaType) + ":" + request.ID
+	key := "v2:" + storage.SourceFingerprint(p.StreamsClient.BaseURL) + ":" + string(request.MediaType) + ":" + request.ID
 	var candidates []torrentCandidate
 	if !request.Refresh && p.Storage != nil {
 		if hit, _ := p.Storage.CacheGet(storage.CacheTorrents, key, &candidates); hit {
@@ -119,6 +122,7 @@ func (p TorBox) torrentCandidates(ctx context.Context, request Request) ([]model
 			Hash: stream.Hash, FileIndex: stream.FileIndex, Title: stream.Title,
 			Filename: stream.Filename, Quality: stream.Quality, Seeders: stream.Seeders,
 			Size: stream.Size, NotWebReady: stream.NotWebReady, Source: stream.Source,
+			AudioLanguages: stream.AudioLanguages, SubtitleLanguages: stream.SubtitleLanguages, LanguageHints: stream.LanguageHints,
 		})
 	}
 	if len(candidates) == 0 {
@@ -137,6 +141,7 @@ func candidateStreams(candidates []torrentCandidate) []model.Stream {
 			Hash: candidate.Hash, FileIndex: candidate.FileIndex, Title: candidate.Title,
 			Filename: candidate.Filename, Quality: candidate.Quality, Seeders: candidate.Seeders,
 			Size: candidate.Size, NotWebReady: candidate.NotWebReady, Source: candidate.Source,
+			AudioLanguages: candidate.AudioLanguages, SubtitleLanguages: candidate.SubtitleLanguages, LanguageHints: candidate.LanguageHints,
 		}
 	}
 	return streams

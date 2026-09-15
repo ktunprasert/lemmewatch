@@ -22,22 +22,26 @@ type Media struct {
 }
 
 type Stream struct {
-	Provider    string
-	Hash        string
-	URL         string
-	Headers     map[string]string
-	FileIndex   int
-	Title       string
-	Filename    string
-	Quality     int
-	Seeders     int
-	Size        int64
-	Cache       CacheStatus
-	Playable    bool
-	NotWebReady bool
-	Source      string
-	Season      int
-	Episode     int
+	Provider          string
+	Hash              string
+	URL               string
+	Headers           map[string]string
+	FileIndex         int
+	Title             string
+	Filename          string
+	Quality           int
+	Seeders           int
+	Size              int64
+	Cache             CacheStatus
+	Playable          bool
+	NotWebReady       bool
+	Source            string
+	Season            int
+	Episode           int
+	AudioLanguages    []string
+	SubtitleLanguages []string
+	LanguageHints     []string
+	MatchRank         int
 }
 
 type CacheStatus string

@@ -107,6 +107,15 @@ func (n navigationChoice) InfoLines(watched map[string]bool) []string {
 		if n.stream.Filename != "" && n.stream.Filename != n.stream.Title {
 			lines = append(lines, "File: "+n.stream.Filename)
 		}
+		if len(n.stream.AudioLanguages) > 0 {
+			lines = append(lines, "Audio (release): "+strings.Join(n.stream.AudioLanguages, ", "))
+		}
+		if len(n.stream.SubtitleLanguages) > 0 {
+			lines = append(lines, "Subtitles (release): "+strings.Join(n.stream.SubtitleLanguages, ", "))
+		}
+		if len(n.stream.LanguageHints) > 0 {
+			lines = append(lines, "Language hints: "+strings.Join(n.stream.LanguageHints, ", "))
+		}
 		return lines
 	default:
 		return []string{n.Label()}

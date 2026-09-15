@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"lemmewatch/internal/model"
@@ -45,6 +46,9 @@ func TestStreamsNormalizesDeduplicatesAndRanks(t *testing.T) {
 	}
 	if items[1].Title != "Episode.Release.1080p" {
 		t.Fatalf("title = %q", items[1].Title)
+	}
+	if !slices.Equal(items[1].LanguageHints, []string{"en", "it"}) {
+		t.Fatalf("lost flags: %v", items[1].LanguageHints)
 	}
 }
 

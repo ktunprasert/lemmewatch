@@ -146,7 +146,7 @@ func TestTorBoxCachesOnlyStableCandidatesAndRefreshesAvailability(t *testing.T) 
 		switch r.URL.Path {
 		case "/stream/movie/tt1.json":
 			streamRequests++
-			_, _ = w.Write([]byte(`{"streams":[{"name":"Torrentio 1080p","title":"Release 1080p","infoHash":"` + hash + `","fileIdx":0,"url":"https://signed.example/secret","behaviorHints":{"proxyHeaders":{"request":{"Authorization":"secret"}}}}]}`))
+			_, _ = w.Write([]byte(`{"streams":[{"name":"Torrentio 1080p","title":"Release 1080p\n🇯🇵\nAudio: Japanese\nSubs: English","infoHash":"` + hash + `","fileIdx":0,"url":"https://signed.example/secret","behaviorHints":{"proxyHeaders":{"request":{"Authorization":"secret"}}}}]}`))
 		case "/torrents/checkcached":
 			cacheRequests++
 			_, _ = w.Write([]byte(`{"success":true,"data":{"` + hash + `":true}}`))
@@ -177,8 +177,10 @@ func TestTorBoxCachesOnlyStableCandidatesAndRefreshesAvailability(t *testing.T) 
 	if err := store.Open(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Streams(context.Background(), request); err != nil {
+	if streams, err := p.Streams(context.Background(), request); err != nil {
 		t.Fatal(err)
+	} else if len(streams[0].AudioLanguages) != 1 || streams[0].AudioLanguages[0] != "ja" || len(streams[0].SubtitleLanguages) != 1 || streams[0].SubtitleLanguages[0] != "en" || len(streams[0].LanguageHints) != 1 || streams[0].LanguageHints[0] != "ja" {
+		t.Fatalf("cache lost language metadata: %#v", streams[0])
 	}
 	request.Refresh = true
 	if _, err := p.Streams(context.Background(), request); err != nil {
@@ -187,7 +189,7 @@ func TestTorBoxCachesOnlyStableCandidatesAndRefreshesAvailability(t *testing.T) 
 	if streamRequests != 2 || cacheRequests != 3 {
 		t.Fatalf("requests = stream %d, cache %d", streamRequests, cacheRequests)
 	}
-	key := storage.SourceFingerprint(server.URL) + ":movie:tt1"
+	key := "v2:" + storage.SourceFingerprint(server.URL) + ":movie:tt1"
 	var candidates []torrentCandidate
 	hit, err := store.CacheGet(storage.CacheTorrents, key, &candidates)
 	if err != nil || !hit || len(candidates) != 1 {

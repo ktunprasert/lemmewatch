@@ -152,7 +152,8 @@ func (c Client) streams(ctx context.Context, mediaType, id string) ([]model.Stre
 		if streamSize == 0 {
 			streamSize = int64(raw.BehaviorHints.VideoSize)
 		}
-		streams = append(streams, model.Stream{Hash: hash, URL: streamURL, Headers: raw.BehaviorHints.ProxyHeaders.Request, FileIndex: raw.FileIdx, Title: title, Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: streamSize, NotWebReady: raw.BehaviorHints.NotWebReady, Source: raw.Name})
+		audio, subtitles, hints := releaseLanguages(raw.Name + "\n" + raw.Title + "\n" + raw.Description + "\n" + raw.BehaviorHints.Filename)
+		streams = append(streams, model.Stream{Hash: hash, URL: streamURL, Headers: raw.BehaviorHints.ProxyHeaders.Request, FileIndex: raw.FileIdx, Title: title, Filename: raw.BehaviorHints.Filename, Quality: quality(text), Seeders: seeders(text), Size: streamSize, NotWebReady: raw.BehaviorHints.NotWebReady, Source: raw.Name, AudioLanguages: audio, SubtitleLanguages: subtitles, LanguageHints: hints})
 	}
 	return streams, nil
 }
@@ -221,9 +222,12 @@ func size(s string) int64 {
 }
 
 func Rank(streams []model.Stream, title string, season, episode int) {
+	for i := range streams {
+		streams[i].MatchRank = streamMatchRank(streams[i], title, season, episode)
+	}
 	sort.SliceStable(streams, func(i, j int) bool {
 		a, b := streams[i], streams[j]
-		aMatch, bMatch := streamMatchRank(a, title, season, episode), streamMatchRank(b, title, season, episode)
+		aMatch, bMatch := a.MatchRank, b.MatchRank
 		if aMatch != bMatch {
 			return aMatch < bMatch
 		}
