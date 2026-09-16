@@ -60,9 +60,9 @@ and pane detail modes. Enter on Provider cycles available playback providers.
 Player accepts a custom executable. `LEMMEWATCH_PLAYER` takes precedence over
 the saved player preference.
 
-**Audio languages**, **Subtitle languages**, **Playback speed**, and **Autoplay
-next episode** are also saved in Settings. Left/Right cycles languages, common
-speeds, or autoplay. Enter edits an
+**Audio languages**, **Subtitle languages**, **Playback speed**, **Autoplay next
+episode**, and **Remember playback position** are also saved in Settings.
+Left/Right cycles languages, common speeds, or toggles. Enter edits an
 ordered, comma-separated language list, for example `ja,en` for Japanese first,
 then English. Language names, ISO two/three-letter codes, and region tags such as
 `pt-BR` are accepted. Clear the field with Ctrl-U and save to use the default.
@@ -93,8 +93,11 @@ tags. Preferences select tracks available to the player; they do not download
 external subtitles or add missing audio tracks. System URL handlers and other
 custom players receive the URL only and use their own playback preferences.
 
-When VLC or mpv is selected directly, browser playback automatically saves the
-position and resumes next time without a prompt. Resume uses CLI flags
+When VLC or mpv is selected directly and **Remember playback position** is on,
+browser playback automatically saves the position and resumes next time without
+a prompt. This setting defaults on. Turning it off skips loading and saving
+checkpoints without deleting existing ones; turning it back on can resume a
+previous checkpoint. Resume uses CLI flags
 (`--start-time` for VLC, `--start` for mpv); local control interfaces are enabled automatically to read
 the position. VLC uses a dedicated instance with a password-protected loopback
 HTTP interface, polled roughly every five seconds, and resumes five seconds

@@ -13,7 +13,8 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
 	cachedOnly := false
-	if err := Save(Preferences{PlaybackPreferences: model.PlaybackPreferences{AudioLanguages: []string{"ja", "en"}, SubtitleLanguages: []string{"en", "fr"}, PlaybackSpeed: 1.25}, Quality: 1080, MediaTab: "series", CachedOnly: &cachedOnly, Provider: "webstreamr", TorBoxToken: "secret", Player: "vlc", Autoplay: true, DetailModes: map[string]string{"media": "i"}, PaneSizes: map[int][]int{2: {1, 1}, 3: {1, 2, 3}}}); err != nil {
+	rememberPlayback := false
+	if err := Save(Preferences{PlaybackPreferences: model.PlaybackPreferences{AudioLanguages: []string{"ja", "en"}, SubtitleLanguages: []string{"en", "fr"}, PlaybackSpeed: 1.25}, Quality: 1080, MediaTab: "series", CachedOnly: &cachedOnly, Provider: "webstreamr", TorBoxToken: "secret", Player: "vlc", Autoplay: true, RememberPlayback: &rememberPlayback, DetailModes: map[string]string{"media": "i"}, PaneSizes: map[int][]int{2: {1, 1}, 3: {1, 2, 3}}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := Load().Quality; got != 1080 {
@@ -31,7 +32,7 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	if got := Load().PaneSizes; !slices.Equal(got[2], []int{1, 1}) || !slices.Equal(got[3], []int{1, 2, 3}) {
 		t.Fatalf("pane sizes = %v", got)
 	}
-	if got := Load(); got.CachedOnly == nil || *got.CachedOnly || got.Provider != "webstreamr" || got.TorBoxToken != "secret" || got.Player != "vlc" || !got.Autoplay {
+	if got := Load(); got.CachedOnly == nil || *got.CachedOnly || got.Provider != "webstreamr" || got.TorBoxToken != "secret" || got.Player != "vlc" || !got.Autoplay || got.RememberPlaybackEnabled() {
 		t.Fatalf("saved defaults = %#v", got)
 	}
 	info, err := os.Stat(filepath.Join(root, "lemmewatch", "preferences.json"))
@@ -55,5 +56,8 @@ func TestLoadIgnoresInvalidPreferences(t *testing.T) {
 	}
 	if got := Load(); got.Quality != 0 || got.MediaTab != "" || len(got.DetailModes) != 0 {
 		t.Fatalf("preferences = %#v", got)
+	}
+	if !Load().RememberPlaybackEnabled() {
+		t.Fatal("missing preference disabled playback memory")
 	}
 }

@@ -101,6 +101,20 @@ func TestAutoplaySettingPersists(t *testing.T) {
 	}
 }
 
+func TestRememberPlaybackSettingPersists(t *testing.T) {
+	m := newBrowser(testChoice{label: "Show"})
+	m.settingsIndex = 15
+	m.overlay = overlaySettings
+	m.rememberPlayback = true
+	saved := true
+	m.options.SaveResume = func(value bool) error { saved = value; return nil }
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = next.(browserModel[testChoice])
+	if m.rememberPlayback || saved || !strings.Contains(ansi.Strip(m.settingsModal()), "Remember playback position") {
+		t.Fatalf("remember playback = %t, saved = %t", m.rememberPlayback, saved)
+	}
+}
+
 func TestStreamLanguageRankingAndFallback(t *testing.T) {
 	m := newBrowser(testChoice{label: "Show"})
 	m.cachedOnly = false

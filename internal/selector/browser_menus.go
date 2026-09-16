@@ -153,7 +153,7 @@ func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 var settingModeGroups = []string{"media", "season", "episode", "stream"}
 
-const settingsCount = 15
+const settingsCount = 16
 
 func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -292,6 +292,11 @@ func (m *browserModel[T]) changeSetting(delta int) {
 		m.autoplay = !m.autoplay
 		if m.options.SaveAutoplay != nil {
 			m.saveSetting(m.options.SaveAutoplay(m.autoplay))
+		}
+	case 15:
+		m.rememberPlayback = !m.rememberPlayback
+		if m.options.SaveResume != nil {
+			m.saveSetting(m.options.SaveResume(m.rememberPlayback))
 		}
 	default:
 		group := settingModeGroups[m.settingsIndex-5]
@@ -756,12 +761,16 @@ func (m browserModel[T]) settingsModal() string {
 	}
 	labels = append(labels, "Two-pane sizes", "Three-pane sizes")
 	values = append(values, formatPaneSizes(paneSizeWeights(2, m.paneSizes)), formatPaneSizes(paneSizeWeights(3, m.paneSizes)))
-	labels = append(labels, "Audio languages", "Subtitle languages", "Playback speed", "Autoplay next episode")
+	labels = append(labels, "Audio languages", "Subtitle languages", "Playback speed", "Autoplay next episode", "Remember playback position")
 	autoplay := "Off"
 	if m.autoplay {
 		autoplay = "On"
 	}
-	values = append(values, languageSettingLabel(m.playbackPreferences.AudioLanguages), languageSettingLabel(m.playbackPreferences.SubtitleLanguages), speedSettingLabel(m.playbackPreferences.PlaybackSpeed), autoplay)
+	rememberPlayback := "Off"
+	if m.rememberPlayback {
+		rememberPlayback = "On"
+	}
+	values = append(values, languageSettingLabel(m.playbackPreferences.AudioLanguages), languageSettingLabel(m.playbackPreferences.SubtitleLanguages), speedSettingLabel(m.playbackPreferences.PlaybackSpeed), autoplay, rememberPlayback)
 	lines := make([]string, 0, len(labels)+2)
 	height := m.height
 	if height <= 0 {

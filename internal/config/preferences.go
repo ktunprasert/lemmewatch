@@ -10,15 +10,20 @@ import (
 
 type Preferences struct {
 	model.PlaybackPreferences
-	Quality     int               `json:"quality,omitempty"`
-	MediaTab    string            `json:"media_tab,omitempty"`
-	CachedOnly  *bool             `json:"cached_only,omitempty"`
-	Provider    string            `json:"provider,omitempty"`
-	TorBoxToken string            `json:"torbox_api_token,omitempty"`
-	Player      string            `json:"player,omitempty"`
-	Autoplay    bool              `json:"autoplay,omitempty"`
-	DetailModes map[string]string `json:"detail_modes,omitempty"`
-	PaneSizes   map[int][]int     `json:"pane_sizes,omitempty"`
+	Quality          int               `json:"quality,omitempty"`
+	MediaTab         string            `json:"media_tab,omitempty"`
+	CachedOnly       *bool             `json:"cached_only,omitempty"`
+	Provider         string            `json:"provider,omitempty"`
+	TorBoxToken      string            `json:"torbox_api_token,omitempty"`
+	Player           string            `json:"player,omitempty"`
+	Autoplay         bool              `json:"autoplay,omitempty"`
+	RememberPlayback *bool             `json:"remember_playback,omitempty"`
+	DetailModes      map[string]string `json:"detail_modes,omitempty"`
+	PaneSizes        map[int][]int     `json:"pane_sizes,omitempty"`
+}
+
+func (p Preferences) RememberPlaybackEnabled() bool {
+	return p.RememberPlayback == nil || *p.RememberPlayback
 }
 
 func Load() Preferences {

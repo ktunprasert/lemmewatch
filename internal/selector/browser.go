@@ -30,6 +30,7 @@ type BrowserOptions[T item] struct {
 	PreferredProvider    string
 	PreferredPlayer      string
 	PreferredAutoplay    bool
+	PreferredResume      bool
 	PreferredPlayback    model.PlaybackPreferences
 	SavePlayback         func(model.PlaybackPreferences) error
 	LoadInfo             func(context.Context, T) (T, error)
@@ -45,6 +46,7 @@ type BrowserOptions[T item] struct {
 	SaveProviderAPIKey   func(string, string) error
 	SavePlayer           func(string) error
 	SaveAutoplay         func(bool) error
+	SaveResume           func(bool) error
 	SaveMode             func(string, string) error
 	SavePaneSizes        func(int, []int) error
 	ChildTitle           func(T) string
@@ -242,6 +244,7 @@ type browserModel[T item] struct {
 	settingsIndex        int
 	player               string
 	autoplay             bool
+	rememberPlayback     bool
 	playbackPreferences  model.PlaybackPreferences
 	playbackSettingValue string
 	provider             string
@@ -1249,7 +1252,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 	if options.PreferredCached != nil {
 		cachedOnly = *options.PreferredCached
 	}
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, paneSizes: maps.Clone(options.PreferredPaneSizes), provider: options.PreferredProvider, player: options.PreferredPlayer, autoplay: options.PreferredAutoplay, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24, help: newHelpModel()}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, paneSizes: maps.Clone(options.PreferredPaneSizes), provider: options.PreferredProvider, player: options.PreferredPlayer, autoplay: options.PreferredAutoplay, rememberPlayback: options.PreferredResume, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24, help: newHelpModel()}
 	initial.playbackPreferences = options.PreferredPlayback
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()

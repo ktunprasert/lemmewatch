@@ -34,6 +34,16 @@ func TestResumePlayerTracksMediaAcrossStreamsAndPlayers(t *testing.T) {
 	if p.ResumeSeconds != 123 {
 		t.Fatalf("resume = %d; want saved second", p.ResumeSeconds)
 	}
+	a.Player.ResumeSeconds = 999
+	a.Player.OnProgress = func(player.Progress) {}
+	if disabled := a.playbackPlayer(selected, false); disabled.ResumeSeconds != 0 || disabled.OnProgress != nil {
+		t.Fatalf("disabled playback memory = %#v", disabled)
+	}
+	if enabled := a.playbackPlayer(selected, true); enabled.ResumeSeconds != 123 || enabled.OnProgress == nil {
+		t.Fatalf("enabled playback memory = %#v", enabled)
+	}
+	a.Player.ResumeSeconds = 0
+	a.Player.OnProgress = nil
 	for _, position := range []float64{0, 0.5, -1, math.NaN(), math.Inf(1)} {
 		p.OnProgress(player.Progress{Position: position})
 	}

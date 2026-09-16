@@ -583,6 +583,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		PreferredProvider: providerID,
 		PreferredPlayer:   preferences.Player,
 		PreferredAutoplay: preferences.Autoplay,
+		PreferredResume:   preferences.RememberPlaybackEnabled(),
 		PreferredPlayback: preferences.PlaybackPreferences,
 		LoadInfo:          a.navigationInfo,
 		SavePlayback: func(value model.PlaybackPreferences) error {
@@ -678,6 +679,10 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			preferences.Autoplay = autoplay
 			return config.Save(preferences)
 		},
+		SaveResume: func(remember bool) error {
+			preferences.RememberPlayback = &remember
+			return config.Save(preferences)
+		},
 		SaveMode: func(group, mode string) error {
 			if preferences.DetailModes == nil {
 				preferences.DetailModes = make(map[string]string)
@@ -698,9 +703,10 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		},
 		Play: func(playContext context.Context, selected navigationChoice, report func(selector.PlaybackStatus)) error {
 			playbackMu.RLock()
-			selectedPlayer := a.resumePlayer(selected)
+			activePreferences := config.Load()
+			selectedPlayer := a.playbackPlayer(selected, activePreferences.RememberPlaybackEnabled())
 			playbackMu.RUnlock()
-			selectedPlayer.Preferences = config.Load().PlaybackPreferences
+			selectedPlayer.Preferences = activePreferences.PlaybackPreferences
 			if selectedPlayer.SupportsResume() {
 				saveProgress := selectedPlayer.OnProgress
 				selectedPlayer.OnProgress = func(progress player.Progress) {

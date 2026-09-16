@@ -55,6 +55,16 @@ func (a App) resumePlayer(selected navigationChoice) player.Player {
 	return p
 }
 
+func (a App) playbackPlayer(selected navigationChoice, remember bool) player.Player {
+	if !remember {
+		p := a.Player
+		p.ResumeSeconds = 0
+		p.OnProgress = nil
+		return p
+	}
+	return a.resumePlayer(selected)
+}
+
 func playbackCompleted(progress player.Progress) bool {
 	return progress.Position >= 0 && !math.IsNaN(progress.Position) && !math.IsInf(progress.Position, 0) &&
 		progress.Duration > 0 && !math.IsNaN(progress.Duration) && !math.IsInf(progress.Duration, 0) &&
