@@ -37,7 +37,7 @@ func (p Player) Play(ctx context.Context, playback model.Playback) error {
 		defer tracker.close()
 	}
 	arguments = append(arguments, p.preferenceArguments()...)
-	arguments = append(arguments, playback.URL)
+	arguments = append(arguments, normalizePlaybackURL(playback.URL))
 	cmd := exec.CommandContext(ctx, p.Executable, arguments...)
 	stdout, stderr := p.Stdout, p.Stderr
 	quiet := p.Verbose != nil && !*p.Verbose
@@ -59,6 +59,11 @@ func (p Player) Play(ctx context.Context, playback model.Playback) error {
 		return fmt.Errorf("player %q failed: %w", p.Executable, sanitizeExitError(err))
 	}
 	return nil
+}
+
+func normalizePlaybackURL(rawURL string) string {
+	// os/exec handles argument quoting; HTTP request targets still require encoded spaces.
+	return strings.ReplaceAll(rawURL, " ", "%20")
 }
 
 func ParseCommand(command string) (string, []string, error) {

@@ -48,10 +48,10 @@ func TestPlayPassesPreferencesAfterCustomArguments(t *testing.T) {
 	var output bytes.Buffer
 	p := Player{Executable: executable, Arguments: []string{"--alang=fr", "--speed=2"}, Stdout: &output,
 		Preferences: model.PlaybackPreferences{AudioLanguages: []string{"ja", "en"}, PlaybackSpeed: 1.5}}
-	if err := p.Play(context.Background(), model.Playback{URL: "https://example.invalid/video"}); err != nil {
+	if err := p.Play(context.Background(), model.Playback{URL: "https://example.invalid/video?token=secret&filename=Show S03E04.mkv"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(output.String()); got != "--alang=fr\n--speed=2\n--alang=ja,en\n--aid=auto\n--speed=1.5\nhttps://example.invalid/video" {
+	if got := strings.TrimSpace(output.String()); got != "--alang=fr\n--speed=2\n--alang=ja,en\n--aid=auto\n--speed=1.5\nhttps://example.invalid/video?token=secret&filename=Show%20S03E04.mkv" {
 		t.Fatalf("arguments: %q", got)
 	}
 }

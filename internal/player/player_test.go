@@ -49,6 +49,17 @@ func TestPlayRejectsRequestHeaders(t *testing.T) {
 	}
 }
 
+func TestNormalizePlaybackURLPreservesSignedQuery(t *testing.T) {
+	raw := "https://cdn.example.invalid/file?token=secret&filename=Show S03E04.mkv"
+	want := "https://cdn.example.invalid/file?token=secret&filename=Show%20S03E04.mkv"
+	if got := normalizePlaybackURL(raw); got != want {
+		t.Fatalf("URL = %q, want %q", got, want)
+	}
+	if got := normalizePlaybackURL(want); got != want {
+		t.Fatalf("encoded URL changed: %q", got)
+	}
+}
+
 func TestParseCommandSupportsQuotedArguments(t *testing.T) {
 	executable, arguments, err := ParseCommand(`"C:\Program Files\mpv\mpv.exe" --no-border --title "My Player"`)
 	if err != nil {
