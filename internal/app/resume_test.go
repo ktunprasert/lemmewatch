@@ -77,3 +77,17 @@ func TestResumeKeySeparatesMoviesSeasonsAndEpisodes(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaybackCompletedRejectsInvalidAndIncompleteProgress(t *testing.T) {
+	for _, progress := range []player.Progress{
+		{}, {Position: 985, Duration: 0}, {Position: math.Inf(1), Duration: 1000},
+		{Position: 900, Duration: 1000}, {Position: math.NaN(), Duration: 1000},
+	} {
+		if playbackCompleted(progress) {
+			t.Fatalf("completed %#v", progress)
+		}
+	}
+	if !playbackCompleted(player.Progress{Position: 985, Duration: 1000}) {
+		t.Fatal("completion threshold not recognized")
+	}
+}

@@ -582,6 +582,7 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 		PreferredCached:   preferences.CachedOnly,
 		PreferredProvider: providerID,
 		PreferredPlayer:   preferences.Player,
+		PreferredAutoplay: preferences.Autoplay,
 		PreferredPlayback: preferences.PlaybackPreferences,
 		LoadInfo:          a.navigationInfo,
 		SavePlayback: func(value model.PlaybackPreferences) error {
@@ -673,6 +674,10 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			a.Player = nextPlayer
 			return nil
 		},
+		SaveAutoplay: func(autoplay bool) error {
+			preferences.Autoplay = autoplay
+			return config.Save(preferences)
+		},
 		SaveMode: func(group, mode string) error {
 			if preferences.DetailModes == nil {
 				preferences.DetailModes = make(map[string]string)
@@ -691,11 +696,20 @@ func (a App) browseMedia(ctx context.Context, items []model.Media, initialTitle,
 			progressCh = make(chan string, 16)
 			return progressCh
 		},
-		Play: func(playContext context.Context, selected navigationChoice) error {
+		Play: func(playContext context.Context, selected navigationChoice, report func(selector.PlaybackStatus)) error {
 			playbackMu.RLock()
 			selectedPlayer := a.resumePlayer(selected)
 			playbackMu.RUnlock()
 			selectedPlayer.Preferences = config.Load().PlaybackPreferences
+			if selectedPlayer.SupportsResume() {
+				saveProgress := selectedPlayer.OnProgress
+				selectedPlayer.OnProgress = func(progress player.Progress) {
+					if saveProgress != nil {
+						saveProgress(progress)
+					}
+					report(selector.PlaybackStatus{Position: progress.Position, Duration: progress.Duration, Completed: playbackCompleted(progress)})
+				}
+			}
 			ch := progressCh
 			defer close(ch)
 			streamProvider, err := a.provider(selected.stream.Provider)

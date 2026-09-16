@@ -60,8 +60,9 @@ and pane detail modes. Enter on Provider cycles available playback providers.
 Player accepts a custom executable. `LEMMEWATCH_PLAYER` takes precedence over
 the saved player preference.
 
-**Audio languages**, **Subtitle languages**, and **Playback speed** are also
-saved in Settings. Left/Right cycles languages or common speeds. Enter edits an
+**Audio languages**, **Subtitle languages**, **Playback speed**, and **Autoplay
+next episode** are also saved in Settings. Left/Right cycles languages, common
+speeds, or autoplay. Enter edits an
 ordered, comma-separated language list, for example `ja,en` for Japanese first,
 then English. Language names, ISO two/three-letter codes, and region tags such as
 `pt-BR` are accepted. Clear the field with Ctrl-U and save to use the default.
@@ -230,9 +231,19 @@ download runs (up to 30 minutes), and starts playback when ready. Cache
 filtering does not apply
 to direct WebStreamr or Pengu streams.
 
-Playback leaves the browser open. Press `s` to stop a directly managed player,
+Playback leaves the browser open. Press `x` to stop a directly managed player,
 or navigate back through episodes and titles while it runs. Native `open`,
 `xdg-open`, and Windows URL handoff cannot stop the external application.
+When **Autoplay next episode** is enabled with directly selected mpv or VLC,
+Lemmewatch starts looking up the next aired episode and its ranked streams 60
+seconds before the measured end of playback. This prefetch does not change the
+visible episode, resolve a final playback URL, or queue an uncached torrent.
+After confirmed completion, the browser advances and immediately starts the
+best playable stream matching the current quality, availability, language, and
+sort preferences. Autoplay crosses season boundaries and stops on future or
+missing episodes, lookup failures, missing matching streams, manual stops, or
+playback closed before the completion threshold. System URL handlers cannot
+report reliable progress, so they never autoplay.
 `lemmewatch history` opens up to 100 recently played top-level IMDb titles in
 the browser. History starts as a single root pane without movie/series tabs;
 opening titles uses the same season, episode, torrent, and playback flow.

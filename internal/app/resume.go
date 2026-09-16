@@ -37,8 +37,7 @@ func (a App) resumePlayer(selected navigationChoice) player.Player {
 			return // Startup and stopped states must not erase an existing checkpoint.
 		}
 		position := int(progress.Position)
-		// Treat the last 15 seconds (at most 5% of short clips) as completed.
-		if progress.Duration > 0 && progress.Position >= progress.Duration-math.Min(15, progress.Duration*0.05) {
+		if playbackCompleted(progress) {
 			position = 0
 		}
 		if position == last {
@@ -54,4 +53,10 @@ func (a App) resumePlayer(selected navigationChoice) player.Player {
 		last = position
 	}
 	return p
+}
+
+func playbackCompleted(progress player.Progress) bool {
+	return progress.Position >= 0 && !math.IsNaN(progress.Position) && !math.IsInf(progress.Position, 0) &&
+		progress.Duration > 0 && !math.IsNaN(progress.Duration) && !math.IsInf(progress.Duration, 0) &&
+		progress.Position >= progress.Duration-math.Min(15, progress.Duration*0.05)
 }

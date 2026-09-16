@@ -856,13 +856,13 @@ func TestBrowserKeepsDirectStreamsWhenCachedOnly(t *testing.T) {
 		t.Fatalf("direct streams = %#v", got)
 	}
 	played := false
-	m.options.Play = func(context.Context, testChoice) error { played = true; return nil }
+	m.options.Play = func(context.Context, testChoice, func(PlaybackStatus)) error { played = true; return nil }
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
 	if command == nil {
 		t.Fatal("direct playback did not start")
 	}
-	_, _ = m.Update(command())
+	_, _ = m.Update(runAsync(command))
 	if !played {
 		t.Fatal("direct stream was not played")
 	}
@@ -1079,7 +1079,7 @@ func TestBrowserPlaybackKeepsSessionOpen(t *testing.T) {
 	m := newBrowser(testChoice{label: "Episode 1", watchID: "show", watchKeys: []string{"1:1"}})
 	m.focusRight = true
 	m.right.items = []testChoice{{label: "stream", terminal: true, cached: true, watchID: "show", watchKeys: []string{"1:1"}}}
-	m.options.Play = func(context.Context, testChoice) error { played = true; return nil }
+	m.options.Play = func(context.Context, testChoice, func(PlaybackStatus)) error { played = true; return nil }
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
 	if !m.playback.busy() || m.chosen || command == nil {
@@ -1088,7 +1088,7 @@ func TestBrowserPlaybackKeepsSessionOpen(t *testing.T) {
 	if !m.options.Watched["show"] || !m.options.Watched["show:1:1"] || !strings.Contains(ansi.Strip(m.View()), "✓ Episode 1") {
 		t.Fatalf("playback did not update watched state: %#v", m)
 	}
-	next, _ = m.Update(command())
+	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
 	if !played || m.playback.busy() || m.toastText() != "Playback launched" {
 		t.Fatalf("playback completion = %#v, played = %t", m, played)
@@ -1099,12 +1099,12 @@ func TestBrowserStopsPlayback(t *testing.T) {
 	m := newBrowser(testChoice{label: "parent"})
 	m.focusRight = true
 	m.right.items = []testChoice{{label: "stream", terminal: true, cached: true}}
-	m.options.Play = func(ctx context.Context, _ testChoice) error { <-ctx.Done(); return ctx.Err() }
+	m.options.Play = func(ctx context.Context, _ testChoice, _ func(PlaybackStatus)) error { <-ctx.Done(); return ctx.Err() }
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(browserModel[testChoice])
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	m = next.(browserModel[testChoice])
-	next, _ = m.Update(command())
+	next, _ = m.Update(runAsync(command))
 	m = next.(browserModel[testChoice])
 	if m.playback.busy() || m.toastText() != "Playback stopped" {
 		t.Fatalf("stopped playback = %#v", m)
@@ -1459,18 +1459,18 @@ func TestPlaybackProgressUpdatesToast(t *testing.T) {
 	m.right.items = []testChoice{{label: "uncached", terminal: true, playable: true, quality: 1080}}
 	ch := make(chan string, 4)
 	m.options.Progress = func() <-chan string { return ch }
-	m.options.Play = func(context.Context, testChoice) error {
+	m.options.Play = func(context.Context, testChoice, func(PlaybackStatus)) error {
 		ch <- "Downloading torrent: 40%"
 		return nil
 	}
 	next, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	batch, ok := command().(tea.BatchMsg)
-	if !ok || len(batch) != 2 {
-		t.Fatalf("commands = %#v", command())
+	if !ok || len(batch) != 3 {
+		t.Fatalf("commands = %#v", batch)
 	}
 	done := make(chan tea.Msg, 1)
 	go func() { done <- batch[0]() }()
-	progress, ok := batch[1]().(playProgress)
+	progress, ok := batch[2]().(playProgress)
 	if !ok {
 		t.Fatalf("progress msg = %#v", progress)
 	}

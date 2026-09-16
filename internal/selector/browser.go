@@ -29,6 +29,7 @@ type BrowserOptions[T item] struct {
 	PreferredCached      *bool
 	PreferredProvider    string
 	PreferredPlayer      string
+	PreferredAutoplay    bool
 	PreferredPlayback    model.PlaybackPreferences
 	SavePlayback         func(model.PlaybackPreferences) error
 	LoadInfo             func(context.Context, T) (T, error)
@@ -43,11 +44,12 @@ type BrowserOptions[T item] struct {
 	ProviderNeedsAPIKey  func(string) bool
 	SaveProviderAPIKey   func(string, string) error
 	SavePlayer           func(string) error
+	SaveAutoplay         func(bool) error
 	SaveMode             func(string, string) error
 	SavePaneSizes        func(int, []int) error
 	ChildTitle           func(T) string
 	Refresh              func(context.Context, T) ([]T, error)
-	Play                 func(context.Context, T) error
+	Play                 func(context.Context, T, func(PlaybackStatus)) error
 	Progress             func() <-chan string
 	Requery              func(context.Context, string) ([]T, error)
 	History              func(context.Context) ([]T, error)
@@ -239,6 +241,7 @@ type browserModel[T item] struct {
 	helpIndex            int
 	settingsIndex        int
 	player               string
+	autoplay             bool
 	playbackPreferences  model.PlaybackPreferences
 	playbackSettingValue string
 	provider             string
@@ -255,6 +258,7 @@ type browserModel[T item] struct {
 	chosen               bool
 	choice               T
 	playback             playbackModel
+	autoplayPlayback     autoplayModel[T]
 	loadCache            map[string][]T
 	loadID               uint64
 	help                 help.Model
@@ -366,8 +370,12 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 		m.toasts.Set(ToastLoad, "Show metadata refreshed")
 	case playProgress:
 		return m.updatePlaybackProgress(msg)
+	case playStatus:
+		return m.updatePlaybackStatus(msg)
 	case playFinished:
 		return m.updatePlaybackFinished(msg)
+	case autoplayPrefetched[T]:
+		return m.updateAutoplayPrefetched(msg)
 	case requeryFinished[T]:
 		m.loading = false
 		m.searching = false
@@ -476,7 +484,12 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			return m, tea.Quit
 		case "x":
 			if m.playback.stopPlayback() {
-				m.toasts.Set(ToastPlayback, "Stopping playback...")
+				if m.playback.running {
+					m.toasts.Set(ToastPlayback, "Stopping playback...")
+				} else {
+					m.playback.finish()
+					m.toasts.Set(ToastPlayback, "Autoplay stopped")
+				}
 			}
 		case "g":
 			m.pendingG = true
@@ -683,18 +696,7 @@ func (m browserModel[T]) confirm() (tea.Model, tea.Cmd) {
 				m.toasts.Set(ToastPlayback, "Stop current playback before starting another")
 				return m, nil
 			}
-			if watchable, ok := any(selected).(watchableItem); ok {
-				identity, keys := watchable.WatchIdentity()
-				if identity != "" {
-					if m.options.Watched == nil {
-						m.options.Watched = make(map[string]bool)
-					}
-					m.options.Watched[identity] = true
-					for _, key := range keys {
-						m.options.Watched[identity+":"+key] = true
-					}
-				}
-			}
+			m.markWatched(selected)
 			return m.startPlayback(selected)
 		}
 		m.levels = append(m.levels, m.right)
@@ -1247,7 +1249,7 @@ func Browse[T item](ctx context.Context, input io.Reader, output io.Writer, item
 	if options.PreferredCached != nil {
 		cachedOnly = *options.PreferredCached
 	}
-	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, paneSizes: maps.Clone(options.PreferredPaneSizes), provider: options.PreferredProvider, player: options.PreferredPlayer, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24, help: newHelpModel()}
+	initial := browserModel[T]{ctx: ctx, levels: []pane[T]{{title: title, items: items}}, load: load, options: options, groupIndex: groupIndex, cachedOnly: cachedOnly, quality: options.PreferredQuality, mode: options.PreferredModes, paneSizes: maps.Clone(options.PreferredPaneSizes), provider: options.PreferredProvider, player: options.PreferredPlayer, autoplay: options.PreferredAutoplay, activeQuery: options.InitialQuery, searching: options.InitialSearch, loading: options.InitialSearch, width: 100, height: 24, help: newHelpModel()}
 	initial.playbackPreferences = options.PreferredPlayback
 	program := tea.NewProgram(initial, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
 	final, err := program.Run()

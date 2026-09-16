@@ -88,6 +88,19 @@ func TestSmallSettingsModalKeepsPlaybackSelectionVisible(t *testing.T) {
 	}
 }
 
+func TestAutoplaySettingPersists(t *testing.T) {
+	m := newBrowser(testChoice{label: "Show"})
+	m.settingsIndex = 14
+	m.overlay = overlaySettings
+	saved := false
+	m.options.SaveAutoplay = func(value bool) error { saved = value; return nil }
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = next.(browserModel[testChoice])
+	if !m.autoplay || !saved || !strings.Contains(ansi.Strip(m.settingsModal()), "Autoplay next episode") {
+		t.Fatalf("autoplay setting = %t, saved = %t", m.autoplay, saved)
+	}
+}
+
 func TestStreamLanguageRankingAndFallback(t *testing.T) {
 	m := newBrowser(testChoice{label: "Show"})
 	m.cachedOnly = false

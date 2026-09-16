@@ -153,7 +153,7 @@ func (m browserModel[T]) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 var settingModeGroups = []string{"media", "season", "episode", "stream"}
 
-const settingsCount = 14
+const settingsCount = 15
 
 func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -168,7 +168,7 @@ func (m browserModel[T]) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right", "l":
 		m.changeSetting(1)
 	case "enter":
-		if m.settingsIndex >= 11 {
+		if m.settingsIndex >= 11 && m.settingsIndex <= 13 {
 			m.playbackSettingValue = m.playbackSettingText()
 			m.openOverlay(overlayPlaybackSetting)
 		} else if m.settingsIndex == 4 {
@@ -288,6 +288,11 @@ func (m *browserModel[T]) changeSetting(delta int) {
 		preferences := m.playbackPreferences
 		preferences.PlaybackSpeed = speeds[wrapIndex(index+delta, len(speeds))]
 		m.savePlaybackPreferences(preferences)
+	case 14:
+		m.autoplay = !m.autoplay
+		if m.options.SaveAutoplay != nil {
+			m.saveSetting(m.options.SaveAutoplay(m.autoplay))
+		}
 	default:
 		group := settingModeGroups[m.settingsIndex-5]
 		modes := m.options.ModeOptions[group]
@@ -317,6 +322,11 @@ func (m *browserModel[T]) saveSetting(err error) {
 }
 
 func (m *browserModel[T]) selectProvider(selected string, save bool) {
+	if m.playback.running && selected != m.provider {
+		m.autoplayPlayback.next = nil
+		m.autoplayPlayback.prefetching = false
+		m.autoplayPlayback.prefetchProvider = ""
+	}
 	m.provider = selected
 	m.right = pane[T]{}
 	m.focusRight = false
@@ -746,8 +756,12 @@ func (m browserModel[T]) settingsModal() string {
 	}
 	labels = append(labels, "Two-pane sizes", "Three-pane sizes")
 	values = append(values, formatPaneSizes(paneSizeWeights(2, m.paneSizes)), formatPaneSizes(paneSizeWeights(3, m.paneSizes)))
-	labels = append(labels, "Audio languages", "Subtitle languages", "Playback speed")
-	values = append(values, languageSettingLabel(m.playbackPreferences.AudioLanguages), languageSettingLabel(m.playbackPreferences.SubtitleLanguages), speedSettingLabel(m.playbackPreferences.PlaybackSpeed))
+	labels = append(labels, "Audio languages", "Subtitle languages", "Playback speed", "Autoplay next episode")
+	autoplay := "Off"
+	if m.autoplay {
+		autoplay = "On"
+	}
+	values = append(values, languageSettingLabel(m.playbackPreferences.AudioLanguages), languageSettingLabel(m.playbackPreferences.SubtitleLanguages), speedSettingLabel(m.playbackPreferences.PlaybackSpeed), autoplay)
 	lines := make([]string, 0, len(labels)+2)
 	height := m.height
 	if height <= 0 {
