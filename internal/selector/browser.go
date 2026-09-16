@@ -486,6 +486,7 @@ func (m browserModel[T]) Update(message tea.Msg) (result tea.Model, command tea.
 			m.playback.stopPlayback()
 			return m, tea.Quit
 		case "x":
+			m.autoplayPlayback.advancing = false
 			if m.playback.stopPlayback() {
 				if m.playback.running {
 					m.toasts.Set(ToastPlayback, "Stopping playback...")

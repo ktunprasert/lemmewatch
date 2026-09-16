@@ -331,6 +331,7 @@ func (m *browserModel[T]) selectProvider(selected string, save bool) {
 		m.autoplayPlayback.next = nil
 		m.autoplayPlayback.prefetching = false
 		m.autoplayPlayback.prefetchProvider = ""
+		m.autoplayPlayback.advancing = false
 	}
 	m.provider = selected
 	m.right = pane[T]{}

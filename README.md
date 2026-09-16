@@ -241,9 +241,10 @@ When **Autoplay next episode** is enabled with directly selected mpv or VLC,
 Lemmewatch starts looking up the next aired episode and its ranked streams 60
 seconds before the measured end of playback. This prefetch does not change the
 visible episode, resolve a final playback URL, or queue an uncached torrent.
-After confirmed completion, the browser advances and immediately starts the
-best playable stream matching the current quality, availability, language, and
-sort preferences. Autoplay crosses season boundaries and stops on future or
+At the completion threshold (the final 15 seconds, or 5% for short clips), the
+browser closes the current managed player and immediately starts the best
+playable stream matching the current quality, availability, language, and sort
+preferences. Autoplay crosses season boundaries and stops on future or
 missing episodes, lookup failures, missing matching streams, manual stops, or
 playback closed before the completion threshold. System URL handlers cannot
 report reliable progress, so they never autoplay.

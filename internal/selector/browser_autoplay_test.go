@@ -76,20 +76,67 @@ func TestAutoplayPrefetchesWithoutSwitchingThenStartsRankedStream(t *testing.T) 
 func TestAutoplayRequiresLatestPlaybackPositionToBeComplete(t *testing.T) {
 	m := autoplayBrowser(t)
 	playID := m.playback.id
-	prefetched := episodeSwitched[testChoice]{
-		episodes: m.current().items, streams: []testChoice{{label: "next", terminal: true, cached: true, quality: 1080}},
-		seasonIndex: 0, episodeIndex: 1, seasonLabel: "Season 1", episodeLabel: "Episode 2", found: true, provider: m.provider,
-	}
-	m.autoplayPlayback.next = &prefetched
-
 	next, _ := m.Update(playStatus{id: playID, status: PlaybackStatus{Position: 990, Duration: 1000, Completed: true}})
 	m = next.(browserModel[testChoice])
 	next, _ = m.Update(playStatus{id: playID, status: PlaybackStatus{Position: 500, Duration: 1000}})
 	m = next.(browserModel[testChoice])
+	m.autoplayPlayback.next = &episodeSwitched[testChoice]{
+		episodes: m.current().items, streams: []testChoice{{label: "next", terminal: true, cached: true, quality: 1080}},
+		seasonIndex: 0, episodeIndex: 1, seasonLabel: "Season 1", episodeLabel: "Episode 2", found: true, provider: m.provider,
+	}
 	next, _ = m.Update(playFinished{id: playID, status: PlaybackStatus{Position: 500, Duration: 1000}})
 	m = next.(browserModel[testChoice])
 	if m.playback.busy() || m.current().index != 0 {
 		t.Fatalf("incomplete playback autoplayed: %#v", m)
+	}
+}
+
+func TestAutoplayAdvancesAtCompletionThreshold(t *testing.T) {
+	m := autoplayBrowser(t)
+	playID := m.playback.id
+	oldContext := m.playback.ctx
+	m.autoplayPlayback.next = &episodeSwitched[testChoice]{
+		episodes: m.current().items, streams: []testChoice{{label: "next", terminal: true, cached: true, quality: 1080}},
+		seasonIndex: 0, episodeIndex: 1, seasonLabel: "Season 1", episodeLabel: "Episode 2", found: true, provider: m.provider,
+	}
+
+	next, _ := m.Update(playStatus{id: playID, status: PlaybackStatus{Position: 985, Duration: 1000, Completed: true}})
+	m = next.(browserModel[testChoice])
+	select {
+	case <-oldContext.Done():
+	default:
+		t.Fatal("completion threshold did not stop current playback")
+	}
+	if !m.autoplayPlayback.advancing {
+		t.Fatal("autoplay advance was not marked")
+	}
+
+	next, command := m.Update(playFinished{id: playID, err: context.Canceled, status: PlaybackStatus{Position: 985, Duration: 1000, Completed: true}})
+	m = next.(browserModel[testChoice])
+	if command == nil || !m.playback.running || m.playback.id == playID || m.current().index != 1 {
+		t.Fatalf("threshold advance did not start next playback: %#v", m)
+	}
+	m.playback.finish()
+}
+
+func TestManualStopCancelsPendingAutoplayAdvance(t *testing.T) {
+	m := autoplayBrowser(t)
+	playID := m.playback.id
+	m.autoplayPlayback.completed = true
+	m.autoplayPlayback.next = &episodeSwitched[testChoice]{
+		episodes: m.current().items, streams: []testChoice{{label: "next", terminal: true, cached: true, quality: 1080}},
+		seasonIndex: 0, episodeIndex: 1, found: true, provider: m.provider,
+	}
+	if !m.requestAutoplayAdvance() {
+		t.Fatal("advance did not begin")
+	}
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m = next.(browserModel[testChoice])
+	next, _ = m.Update(playFinished{id: playID, err: context.Canceled, status: PlaybackStatus{Position: 985, Duration: 1000, Completed: true}})
+	m = next.(browserModel[testChoice])
+	if m.playback.busy() || m.current().index != 0 || m.playback.id != playID {
+		t.Fatalf("manual stop autoplayed: %#v", m)
 	}
 }
 

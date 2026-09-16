@@ -94,6 +94,7 @@ type autoplayModel[T item] struct {
 	prefetching      bool
 	prefetchProvider string
 	completed        bool
+	advancing        bool
 }
 
 type autoplayPrefetched[T item] struct {
@@ -191,6 +192,7 @@ func (m *browserModel[T]) updatePlaybackStatus(msg playStatus) (tea.Model, tea.C
 	if m.shouldPrefetchAutoplay(msg.status) {
 		prefetch = m.startAutoplayPrefetch()
 	}
+	m.requestAutoplayAdvance()
 	listen := listenPlaybackStatus(m.playback.status, msg.id)
 	if prefetch != nil {
 		return *m, tea.Batch(listen, prefetch)
@@ -263,6 +265,9 @@ func (m *browserModel[T]) updateAutoplayPrefetched(msg autoplayPrefetched[T]) (t
 	}
 	m.autoplayPlayback.prefetching = false
 	m.autoplayPlayback.next = &msg.next
+	if m.playback.running {
+		m.requestAutoplayAdvance()
+	}
 	if !m.playback.running && m.autoplayPlayback.completed && m.autoplay {
 		return m.startPrefetchedPlayback()
 	}
@@ -279,6 +284,8 @@ func (m *browserModel[T]) updatePlaybackFinished(msg playFinished) (tea.Model, t
 	}
 	m.toasts.Spin(false)
 	switch {
+	case errors.Is(msg.err, context.Canceled) && m.autoplayPlayback.advancing && m.autoplayPlayback.completed && m.autoplay:
+		return m.startPrefetchedPlayback()
 	case errors.Is(msg.err, context.Canceled):
 		m.playback.finish()
 		m.toasts.Set(ToastPlayback, "Playback stopped")
@@ -300,6 +307,23 @@ func (m *browserModel[T]) updatePlaybackFinished(msg playFinished) (tea.Model, t
 		m.toasts.Set(ToastPlayback, "Preparing next episode...")
 		return *m, nil
 	}
+}
+
+func (m *browserModel[T]) requestAutoplayAdvance() bool {
+	next := m.autoplayPlayback.next
+	if !m.playback.running || m.autoplayPlayback.advancing || !m.autoplay || !m.autoplayPlayback.completed ||
+		next == nil || next.err != nil || !next.found {
+		return false
+	}
+	if _, _, ok := m.autoplayStream(next.streams); !ok {
+		return false
+	}
+	if !m.playback.stopPlayback() {
+		return false
+	}
+	m.autoplayPlayback.advancing = true
+	m.toasts.Set(ToastPlayback, "Advancing to next episode...")
+	return true
 }
 
 func (m *browserModel[T]) startPrefetchedPlayback() (tea.Model, tea.Cmd) {
