@@ -250,6 +250,17 @@ func (n navigationChoice) SortFields() (string, int, time.Time, bool) {
 }
 
 func (n navigationChoice) Status(watched map[string]bool) string {
+	if n.kind == navigationSeason {
+		seen := 0
+		for _, episode := range n.episodes {
+			if watched[fmt.Sprintf("%s:%d:%d", n.media.ID, episode.Season, episode.Episode)] {
+				seen++
+			}
+		}
+		if seen > 0 && seen < len(n.episodes) {
+			return "~"
+		}
+	}
 	if n.kind == navigationMedia && n.media.UpdateEpisode != "" && !watched[n.media.ID+":"+n.media.UpdateEpisode] {
 		return "+"
 	}

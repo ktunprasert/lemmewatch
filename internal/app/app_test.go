@@ -247,6 +247,27 @@ func TestEpisodeUpdateStatusTracksLiveWatchedState(t *testing.T) {
 	}
 }
 
+func TestSeasonStatusMarksPartialProgress(t *testing.T) {
+	choice := navigationChoice{
+		kind:   navigationSeason,
+		media:  model.Media{ID: "tt1", Type: model.Series},
+		season: 1,
+		episodes: []model.Episode{
+			{Season: 1, Episode: 1},
+			{Season: 1, Episode: 2},
+		},
+	}
+	if status := choice.Status(nil); status != "" {
+		t.Fatalf("unwatched season status = %q", status)
+	}
+	if status := choice.Status(map[string]bool{"tt1:1:1": true}); status != "~" {
+		t.Fatalf("in-progress season status = %q", status)
+	}
+	if status := choice.Status(map[string]bool{"tt1:1:1": true, "tt1:1:2": true}); status != "" {
+		t.Fatalf("watched season status = %q", status)
+	}
+}
+
 func TestHistoryChoiceHasDatePlayedMode(t *testing.T) {
 	playedAt := time.Date(2025, time.January, 2, 3, 4, 0, 0, time.Local)
 	modes := (navigationChoice{kind: navigationMedia, playedAt: playedAt}).ContextModes()
