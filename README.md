@@ -203,7 +203,7 @@ fields; credentials, request headers, and playback URLs are excluded. Inspecting
 info never queues a torrent or creates a Pro stream.
 Requests run in the background and cancel when selection changes. Cached/basic
 info stays visible on failure; close and reopen `i` to retry. Full Cinemeta details
-are cached for 30 days, while TorBox account details remain session-only. Show
+are cached for a day, while TorBox account details remain session-only. Show
 refresh (`r`/`F5` in seasons/episodes) updates the full metadata cache too.
 
 Rating detail mode (`m`, then `r`) loads missing Cinemeta ratings for visible
@@ -262,7 +262,7 @@ press `d` to remove the selected title. In season and episode panes, `W` toggles
 every row through the selected row as watched or unwatched; `w` still toggles
 only the selected row.
 Search results are cached for 24 hours. Complete series season and episode
-metadata is cached for 30 days. Stable Torrentio candidates are cached for 24
+metadata is cached for a day. Stable Torrentio candidates are cached for 24
 hours, while TorBox availability is checked when those candidates load into a
 browser session. Temporary WebStreamr and Pengu URLs remain session-only and are
 never written to disk. Press `r` or `F5` inside a season or episode list to
