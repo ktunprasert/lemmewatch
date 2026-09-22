@@ -98,7 +98,7 @@ const (
 
 const (
 	searchCacheTTL = 24 * time.Hour
-	seriesCacheTTL = 30 * 24 * time.Hour
+	seriesCacheTTL = 24 * time.Hour
 )
 
 type navigationChoice struct {
